@@ -45,3 +45,39 @@ pytest -m "not integration"
 
 Unit tests use fake LLMs/embedders and need no network, Ollama or model downloads.
 Both commands must be clean before a PR.
+
+## 3. Ingestion (validation + translation + chunk + embed + store)
+
+```bash
+export LEX6_DATA_DIR=/tmp/lex6data            # keep test stores out of the repo
+lex6 -v ingest data/sample                    # files or directories
+```
+
+Expected on the sample corpus: 4 files `ingested`; `Accord_de_Paris-extrait-FR.pdf` shows
+`lang=fr translated_pages=2`. Re-running reports every file as `rejected ... duplicate`.
+First run downloads `BAAI/bge-m3` (~2.3 GB) from HuggingFace. To start fresh: `rm -rf $LEX6_DATA_DIR`.
+Changing `LEX6_EMBEDDING_MODEL` requires a fresh data dir (the store refuses to load otherwise).
+
+## 4. Retrieval / RAG pipelines (notebook `rag_advanced`)
+
+```bash
+export LEX6_LLM_MODEL=qwen2.5:3b LEX6_DATA_DIR=/tmp/lex6data   # after step 3
+lex6 ask "What do Parties need to apply under Article 6 to avoid double counting?" --top-k 4
+lex6 ask "What is the Paris Agreement?" --retriever naive          # dense-only baseline
+```
+
+`advanced` = HyDE (cloud `gpt-oss:120b-cloud` if `OLLAMA_API_KEY`, else local model) + BM25 + cross-encoder
+(first run downloads `cross-encoder/ms-marco-MiniLM-L-6-v2`). Expect the bilateral-agreement DOCX
+(Article 5, corresponding adjustments) as source [1]. Scores: advanced = cross-encoder logits, naive = cosine.
+~45 s per question on a CPU-only VM.
+
+## 5. Retrieval agent (default for `lex6 ask`)
+
+```bash
+lex6 ask "What must the host Party do to avoid double counting of ITMOs?"   # trace on stderr
+lex6 ask "Hello, who are you?"          # expect: no retrieval (route -> small talk)
+lex6 ask --json "..."                   # full AgentResponse: steps, sources, citations, citation_mode
+```
+
+Expected trace: `route -> plan -> retrieve -> reflect [-> retrieve] -> [verify_citations] -> answer`;
+`citation_mode=explicit` with `[n]` markers that point at chunks in `sources`. ~1.5-2 min per question on CPU.
