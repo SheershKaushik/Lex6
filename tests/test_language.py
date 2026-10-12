@@ -97,3 +97,21 @@ def test_translator_caps_tokens_and_collapses_output():
     out = LLMTranslator(llm).translate("Il doit être équitable.", "fr")
     assert out == "It shall be fair, ambitious and effective;"
     assert llm.prompts[0]["max_tokens"] == len("Il doit être équitable.") // 2 + 128
+
+
+def test_translator_retries_degenerate_pieces_in_halves():
+    from lex6.ingestion.language import LLMTranslator
+    from tests.conftest import ScriptedLLM
+
+    def fn(prompt, system):
+        src = prompt.split("\n\n", 1)[1]
+        if len(src) > 400:  # long input -> the model loops
+            return "and Considering that it is fair, transparent and predictable, " * 6
+        return "EN:" + src[:20]
+
+    llm = ScriptedLLM(fn=fn)
+    text = ("Considérant que la Convention doit être mise en œuvre de manière équitable. " * 4 + "\n\n") * 2
+    out = LLMTranslator(llm, max_chars=1000).translate(text, "fr")
+    assert "Considering" not in out
+    assert out.count("EN:") >= 2
+    assert len(llm.prompts) >= 3

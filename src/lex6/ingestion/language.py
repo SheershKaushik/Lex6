@@ -83,28 +83,42 @@ def collapse_repetitions(text: str, min_chars: int = 20, max_cycle: int = 4) -> 
 
 
 class LLMTranslator:
-    """Translates text with a local Ollama model, in pieces small enough for the model's context."""
+    """Translates text with a local Ollama model, in pieces small enough for the model's context.
 
-    def __init__(self, llm: LLM, max_chars: int = 1500):
+    A piece whose translation degenerates (repeated clauses, runaway length) is re-translated in halves,
+    since small local models loop far less on short inputs.
+    """
+
+    def __init__(self, llm: LLM, max_chars: int = 1000, min_retry_chars: int = 300, max_depth: int = 2):
         self.llm = llm
-        self.splitter = RecursiveCharacterTextSplitter(chunk_size=max_chars, chunk_overlap=0)
+        self.max_chars = max_chars
+        self.min_retry_chars = min_retry_chars
+        self.max_depth = max_depth
+
+    @staticmethod
+    def _split(text: str, size: int) -> list[str]:
+        return RecursiveCharacterTextSplitter(chunk_size=size, chunk_overlap=0).split_text(text)
+
+    def _translate_piece(self, piece: str, source_language: str, depth: int = 0) -> str:
+        prompt = f"Translate this {language_name(source_language)} text into English:\n\n{piece}"
+        # ~4 chars/token; a translation needs about as many tokens as its source, so cap runaway generations
+        max_tokens = min(2048, len(piece) // 2 + 128)
+        raw = self.llm.generate(prompt, system=TRANSLATION_SYSTEM, max_tokens=max_tokens).strip()
+        if not raw:
+            raise TranslationError("translator returned empty output")
+        out = collapse_repetitions(raw).strip()
+        degenerate = len(out) < 0.9 * len(raw) or len(raw) > 1.6 * len(piece) + 100
+        if degenerate and depth < self.max_depth and len(piece) >= self.min_retry_chars:
+            logger.info("translation of %d chars degenerated; retrying in halves", len(piece))
+            halves = self._split(piece, len(piece) // 2 + 1)
+            if len(halves) > 1:
+                return "\n".join(self._translate_piece(h, source_language, depth + 1) for h in halves)
+        return out
 
     def translate(self, text: str, source_language: str) -> str:
         if not text.strip():
             return text
-        pieces = self.splitter.split_text(text)
-        out = []
-        for piece in pieces:
-            prompt = f"Translate this {language_name(source_language)} text into English:\n\n{piece}"
-            # ~4 chars/token; a translation needs about as many tokens as its source, so cap runaway generations
-            max_tokens = min(2048, len(piece) // 2 + 128)
-            translated = collapse_repetitions(
-                self.llm.generate(prompt, system=TRANSLATION_SYSTEM, max_tokens=max_tokens)
-            ).strip()
-            if not translated:
-                raise TranslationError("translator returned empty output")
-            out.append(translated)
-        return "\n".join(out)
+        return "\n".join(self._translate_piece(p, source_language) for p in self._split(text, self.max_chars))
 
 
 class LanguageNormalizer:
