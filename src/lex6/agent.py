@@ -71,7 +71,9 @@ Message: {question}
 
 CITATION_REMINDER = (
     "### Citation format\nAfter every claim put the number of the context chunk it comes from in square "
-    "brackets, e.g. [1] or [2, 3]. Cite chunk numbers, not file names.\n\n### Answer"
+    "brackets, e.g. [1] or [2, 3]. Cite chunk numbers, not file names, and do not copy the chunk headers. "
+    "Read every chunk before saying the context lacks something; never claim information is missing and then "
+    "use it.\n\n### Answer"
 )
 
 _SMALL_TALK_RE = re.compile(
@@ -139,6 +141,43 @@ def infer_citations(answer: str, chunks: list[dict[str, Any]], shingle: int = 8)
         if any(tuple(tokens[j : j + shingle]) in answer_grams for j in range(len(tokens) - shingle + 1)):
             cited.append(i)
     return cited
+
+
+_SOURCE_ECHO_RE = re.compile(r"^[ \t]*\[\d+(?:\s*,\s*\d+)*\][ \t]*Source:.*(?:\n|$)", re.MULTILINE)
+
+
+def strip_source_echoes(answer: str) -> str:
+    """Remove copied context headers ("[4] Source: file, page 1"); their numbers are often wrong."""
+    return _SOURCE_ECHO_RE.sub("", answer)
+
+
+def _shingles(text: str, n: int) -> set[tuple[str, ...]]:
+    tokens = re.findall(r"\w+", text.lower())
+    return {tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1)}
+
+
+def add_missing_citations(answer: str, chunks: list[dict[str, Any]], shingle: int = 8) -> tuple[str, list[int]]:
+    """Append ``[m]`` to uncited sentences/lines that quote chunk ``m`` verbatim (``shingle`` words)."""
+    chunk_grams = [_shingles(d["content"], shingle) for d in chunks]
+    added: list[int] = []
+    parts = re.split(r"((?<=[.!?])[ \t]+|\n+)", answer)
+    for k in range(0, len(parts), 2):
+        sentence = parts[k]
+        if not sentence.strip() or _CITATION_RE.search(sentence):
+            continue
+        grams = _shingles(sentence, shingle)
+        nums = [i for i, cg in enumerate(chunk_grams, start=1) if grams & cg]
+        if not nums:
+            continue
+        marker = f" [{', '.join(map(str, nums))}]"
+        stripped = sentence.rstrip()
+        trail = sentence[len(stripped) :]
+        if stripped[-1] in ".!?;:":
+            parts[k] = stripped[:-1] + marker + stripped[-1] + trail
+        else:
+            parts[k] = stripped + marker + trail
+        added.extend(n for n in nums if n not in added)
+    return ("".join(parts) if added else answer), added
 
 
 def _content_words(text: str) -> set[str]:
@@ -327,17 +366,19 @@ class RetrievalAgent:
             context=format_context(context), question=question, insufficient=INSUFFICIENT_CONTEXT
         ).replace("### Answer", CITATION_REMINDER)
         raw_answer = self.llm.generate(prompt, max_tokens=self.answer_max_tokens)
-        answer, cited = sanitize_citations(raw_answer, len(context))
+        answer, cited = sanitize_citations(strip_source_echoes(raw_answer), len(context))
         mode = "explicit" if cited else "none"
         if cited:
-            answer = drop_contradictory_abstention(answer)
             answer, fixes = verify_citations(answer, context)
             if fixes:
                 steps.append(AgentStep("verify_citations", {"remapped": fixes}))
-                cited = extract_citations(answer)
-        if not cited:
-            cited = infer_citations(answer, context)
-            mode = "inferred" if cited else "none"
+        answer, added = add_missing_citations(answer, context)
+        if added:
+            steps.append(AgentStep("add_citations", {"quoted_chunks": added}))
+            mode = mode if cited else "inferred"
+        cited = extract_citations(answer)
+        if cited:
+            answer = drop_contradictory_abstention(answer)
         sources = build_sources(context)
         steps.append(AgentStep("answer", {"chunks": len(context), "cited": cited, "citation_mode": mode}))
         return AgentResponse(

@@ -218,3 +218,52 @@ def test_verify_citations_per_line_keeps_formatting_and_uses_idf():
 
     assert drop_contradictory_abstention(f"Ten percent [2]. {INSUFFICIENT_CONTEXT}") == "Ten percent [2]."
     assert drop_contradictory_abstention(INSUFFICIENT_CONTEXT) == INSUFFICIENT_CONTEXT
+
+
+REAL_LEAKAGE_ANSWER = """### Part 1: Analysis of the Agreement
+The bilateral agreement does not contain specific provisions regarding the deduction.
+
+### Part 2: Relevant Legal Standards
+The relevant section from the glossary regarding leakage is as follows:
+[4] Source: Article6_glossary.txt, page 1
+Leakage - An increase in greenhouse gas emissions outside the boundary of a mitigation activity that is caused by that \
+activity.
+
+### Part 3: Legal Assessment
+According to Article 4 of the bilateral agreement, the Parties shall identify, quantify, and deduct any increase in \
+emissions occurring outside the boundary of a mitigation activity (leakage). Where leakage cannot be quantified, a \
+default deduction of ten percent of the mitigation outcomes shall apply. Therefore, the default deduction of ten \
+percent applies."""
+
+
+def test_real_model_leakage_answer_is_recited_to_the_docx():
+    """Regression: qwen2.5:3b copied a context header with a wrong number and quoted the DOCX without markers."""
+    docs = [
+        chunk(
+            1,
+            "Article 4 - Leakage\nThe Parties shall identify, quantify and deduct any increase in emissions "
+            "occurring outside the boundary of a mitigation activity (leakage). Where leakage cannot be "
+            "quantified, a default deduction of ten percent of the mitigation outcomes shall apply.",
+            3.5,
+        ),
+        chunk(
+            2,
+            "Leakage - An increase in greenhouse gas emissions outside the boundary of a mitigation activity "
+            "that is caused by that activity.",
+            -2.6,
+        ),
+        chunk(3, "Article 1 - Purpose\nThe Parties establish a framework for cooperative approaches.", -5.8),
+        chunk(4, "ITMO - Internationally transferred mitigation outcome.", -6.3),
+    ]
+
+    class Fixed:
+        def retrieve(self, query, top_k=5, score_threshold=-10.0):
+            return docs
+
+    resp = RetrievalAgent(Fixed(), routed_llm(plan=[], answer=REAL_LEAKAGE_ANSWER)).run("leakage deduction?")
+    assert "Source: Article6_glossary.txt" not in resp.answer
+    assert "[4]" not in resp.answer
+    assert "default deduction of ten percent of the mitigation outcomes shall apply [1]." in resp.answer
+    assert "caused by that activity [2]." in resp.answer
+    assert {c["chunk_id"] for c in resp.citations} == {"c1", "c2"}
+    assert resp.citation_mode == "inferred"
