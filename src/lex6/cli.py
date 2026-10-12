@@ -57,6 +57,32 @@ def _cmd_ask(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_eval(args: argparse.Namespace) -> int:
+    from lex6.eval import AgentSystem, NaiveBaseline, format_report, load_questions, run_eval
+    from lex6.services import build_agent, build_llm, build_retriever, build_vector_store
+
+    questions = load_questions(args.questions)
+    if args.only:
+        questions = [q for q in questions if q.id in set(args.only.split(","))]
+    vs = build_vector_store()
+    systems = {
+        "baseline": NaiveBaseline(build_retriever("naive", vector_store=vs), build_llm(), top_k=args.top_k),
+        "agent": AgentSystem(build_agent(vector_store=vs)),
+    }
+
+    def progress(qid: str, name: str, result: dict) -> None:
+        print(
+            f"  {qid} {name:8s} overall={result['overall']:.2f} {result['output']['latency_s']:.0f}s", file=sys.stderr
+        )
+
+    rows = run_eval(questions, systems, on_result=progress)
+    print(format_report(rows, list(systems)))
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            json.dump(rows, f, indent=2, default=str)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="lex6", description="Agentic RAG over climate-law documents")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -75,6 +101,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--min-score", type=float, default=None)
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=_cmd_ask)
+
+    p = sub.add_parser("eval", help="Score the agent against the naive single-shot baseline on a fixed question set")
+    p.add_argument("--questions", default=None, help="JSON question set (default: built-in set for data/sample)")
+    p.add_argument("--only", default=None, help="comma-separated question ids")
+    p.add_argument("--top-k", type=int, default=5, help="baseline top_k")
+    p.add_argument("--output", default=None, help="write full per-question results as JSON")
+    p.set_defaults(func=_cmd_eval)
     return parser
 
 
