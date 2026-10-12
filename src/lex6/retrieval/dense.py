@@ -29,7 +29,8 @@ class RAGRetriever:
             if not doc_data:
                 continue
             similarity = float(cosine_from_squared_l2(distance))
-            if similarity < score_threshold:
+            # float32 FAISS distances of orthogonal unit vectors can land a hair above 2.0 (cosine -1e-7)
+            if similarity < score_threshold - 1e-6:
                 continue
             results.append(
                 make_result(
