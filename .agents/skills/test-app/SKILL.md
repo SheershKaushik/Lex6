@@ -45,3 +45,15 @@ pytest -m "not integration"
 
 Unit tests use fake LLMs/embedders and need no network, Ollama or model downloads.
 Both commands must be clean before a PR.
+
+## 3. Ingestion (validation + translation + chunk + embed + store)
+
+```bash
+export LEX6_DATA_DIR=/tmp/lex6data            # keep test stores out of the repo
+lex6 -v ingest data/sample                    # files or directories
+```
+
+Expected on the sample corpus: 4 files `ingested`; `Accord_de_Paris-extrait-FR.pdf` shows
+`lang=fr translated_pages=2`. Re-running reports every file as `rejected ... duplicate`.
+First run downloads `BAAI/bge-m3` (~2.3 GB) from HuggingFace. To start fresh: `rm -rf $LEX6_DATA_DIR`.
+Changing `LEX6_EMBEDDING_MODEL` requires a fresh data dir (the store refuses to load otherwise).

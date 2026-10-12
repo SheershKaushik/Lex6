@@ -1,0 +1,17 @@
+Article 6 glossary (illustrative notes prepared for testing the Lex6 system)
+
+ITMO - Internationally transferred mitigation outcome. A unit of emission reductions or removals that is
+transferred between Parties under a cooperative approach referred to in Article 6, paragraph 2, of the
+Paris Agreement and used towards a nationally determined contribution.
+
+Corresponding adjustment - An accounting entry made by the transferring Party that adds the transferred
+quantity back to its emissions balance so that the same reduction is not counted by two Parties.
+
+Additionality - The requirement that a mitigation activity would not have happened without the
+incentive provided by carbon finance.
+
+Leakage - An increase in greenhouse gas emissions outside the boundary of a mitigation activity that is
+caused by that activity.
+
+Global stocktake - The periodic assessment, under Article 14 of the Paris Agreement, of the collective
+progress towards achieving the purpose of the Agreement and its long-term goals.
