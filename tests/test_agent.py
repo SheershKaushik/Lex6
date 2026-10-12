@@ -191,3 +191,30 @@ def test_agent_records_citation_remap():
     assert resp.answer.endswith("[2].")
     assert [c["chunk_id"] for c in resp.citations] == ["c1"]
     assert any(s.action == "verify_citations" for s in resp.steps)
+
+
+def test_verify_citations_per_line_keeps_formatting_and_uses_idf():
+    from lex6.agent import drop_contradictory_abstention
+    from lex6.rag import INSUFFICIENT_CONTEXT
+
+    chunks = [
+        chunk(
+            1, "Leakage - An increase in greenhouse gas emissions outside the boundary of a mitigation activity.", 1.0
+        ),
+        chunk(
+            2,
+            "Article 4 - Leakage. The Parties shall identify and deduct leakage. Where leakage cannot be "
+            "quantified, a default deduction of ten percent of the mitigation outcomes shall apply.",
+            1.0,
+        ),
+    ]
+    answer = (
+        "**Part 1: Analysis**\nThe agreement addresses leakage outside the boundary of a mitigation activity "
+        "and, where leakage cannot be quantified, applies a default deduction of ten percent [1].\n\n**Part 2**"
+    )
+    fixed, fixes = verify_citations(answer, chunks)
+    assert fixes == [(1, 2)]
+    assert fixed == answer.replace("[1]", "[2]")
+
+    assert drop_contradictory_abstention(f"Ten percent [2]. {INSUFFICIENT_CONTEXT}") == "Ten percent [2]."
+    assert drop_contradictory_abstention(INSUFFICIENT_CONTEXT) == INSUFFICIENT_CONTEXT

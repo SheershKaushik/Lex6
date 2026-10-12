@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -149,19 +150,32 @@ def verify_citations(
 ) -> tuple[str, list[tuple[int, int]]]:
     """Re-point a sentence's ``[n]`` to the chunk that actually supports it.
 
-    Small local models often attach the wrong number. A marker is moved from chunk ``n`` to chunk ``m``
-    when ``m`` covers at least ``min_support`` of the sentence's content words and beats ``n`` by ``margin``.
+    Small local models often attach the wrong number. Support = IDF-weighted share of the sentence's content
+    words found in a chunk (words shared by many chunks count less). A marker moves from chunk ``n`` to chunk
+    ``m`` when ``m`` has at least ``min_support`` and beats ``n`` by ``margin``. Sentences and lines are checked
+    separately; formatting is preserved.
     """
     chunk_words = [_content_words(d["content"]) for d in chunks]
+    n_chunks = len(chunks)
+    df: dict[str, int] = {}
+    for cw in chunk_words:
+        for w in cw:
+            df[w] = df.get(w, 0) + 1
+
+    def idf(w: str) -> float:
+        return math.log(1 + n_chunks / df[w])
+
     fixes: list[tuple[int, int]] = []
-    out = []
-    for sentence in re.split(r"(?<=[.!?])\s+", answer):
-        words = _content_words(_CITATION_RE.sub("", sentence))
+    parts = re.split(r"((?<=[.!?])[ \t]+|\n+)", answer)
+    for k in range(0, len(parts), 2):
+        sentence = parts[k]
+        # Paraphrase words found in no chunk can't discriminate between chunks.
+        words = {w for w in _content_words(_CITATION_RE.sub("", sentence)) if w in df}
         if not words or not _CITATION_RE.search(sentence):
-            out.append(sentence)
             continue
-        support = [len(words & cw) / len(words) for cw in chunk_words]
-        best = max(range(len(chunks)), key=lambda i: support[i]) + 1
+        total = sum(idf(w) for w in words)
+        support = [sum(idf(w) for w in words & cw) / total for cw in chunk_words]
+        best = max(range(n_chunks), key=lambda i: support[i]) + 1
 
         def repl(match: re.Match, support=support, best=best) -> str:
             nums = []
@@ -173,8 +187,16 @@ def verify_citations(
                     nums.append(n)
             return f"[{', '.join(map(str, nums))}]"
 
-        out.append(_CITATION_RE.sub(repl, sentence))
-    return " ".join(out) if fixes else answer, fixes
+        parts[k] = _CITATION_RE.sub(repl, sentence)
+    return ("".join(parts) if fixes else answer), fixes
+
+
+def drop_contradictory_abstention(answer: str) -> str:
+    """Remove the 'insufficient information' boilerplate when the model answered (with citations) anyway."""
+    if INSUFFICIENT_CONTEXT not in answer or not _CITATION_RE.search(answer):
+        return answer
+    stripped = answer.replace(INSUFFICIENT_CONTEXT, "").strip()
+    return stripped or answer
 
 
 @dataclass
@@ -308,6 +330,7 @@ class RetrievalAgent:
         answer, cited = sanitize_citations(raw_answer, len(context))
         mode = "explicit" if cited else "none"
         if cited:
+            answer = drop_contradictory_abstention(answer)
             answer, fixes = verify_citations(answer, context)
             if fixes:
                 steps.append(AgentStep("verify_citations", {"remapped": fixes}))
