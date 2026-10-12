@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-r1:8b"
     llm_temperature: float = 0.1
     llm_num_predict: int = 8192
+    # Ollama's default context window silently truncates long RAG prompts; raise it explicitly.
+    llm_num_ctx: int = 8192
     translation_model: str | None = None
     hyde_model: str = "gpt-oss:120b-cloud"
     ollama_cloud_host: str = "https://ollama.com"

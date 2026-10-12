@@ -50,7 +50,7 @@ addopts = "-q"
 markers = ["integration: needs a running Ollama server and downloaded HF models (deselected by default in CI)"]
 
 [tool.ruff]
-line-length = 110
+line-length = 120
 target-version = "py310"
 src = ["src", "tests"]
 
