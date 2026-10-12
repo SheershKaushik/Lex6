@@ -26,7 +26,22 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
 
 def _cmd_ask(args: argparse.Namespace) -> int:
     from lex6.rag import rag_advanced
-    from lex6.services import build_llm, build_retriever
+    from lex6.services import build_agent, build_llm, build_retriever
+
+    if args.pipeline == "agent":
+        response = build_agent().run(args.question)
+        if args.json:
+            print(json.dumps(response.to_dict(), indent=2, default=str))
+            return 0
+        print(response.answer)
+        for step in response.steps:
+            print(f"  · {step.action}: {step.detail}", file=sys.stderr)
+        if response.citations:
+            print("\nCitations:")
+            for c in response.citations:
+                page = f" p.{c['page']}" if c["page"] is not None else ""
+                print(f"  [{c['index']}] {c['source']}{page} ({c['chunk_id']})")
+        return 0
 
     retriever = build_retriever(args.retriever)
     min_score = args.min_score if args.min_score is not None else (0.2 if args.retriever == "naive" else -10.0)
@@ -52,9 +67,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true", help="Also print the reports as JSON")
     p.set_defaults(func=_cmd_ingest)
 
-    p = sub.add_parser("ask", help="Answer a question with a notebook RAG pipeline (rag_advanced)")
+    p = sub.add_parser("ask", help="Answer a question with the retrieval agent (or --pipeline rag)")
     p.add_argument("question")
-    p.add_argument("--retriever", choices=["naive", "advanced"], default="advanced")
+    p.add_argument("--pipeline", choices=["agent", "rag"], default="agent", help="agent (default) or rag_advanced")
+    p.add_argument("--retriever", choices=["naive", "advanced"], default="advanced", help="for --pipeline rag")
     p.add_argument("--top-k", type=int, default=5)
     p.add_argument("--min-score", type=float, default=None)
     p.add_argument("--json", action="store_true")

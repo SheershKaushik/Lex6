@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from lex6.agent import RetrievalAgent
 from lex6.config import Settings, get_settings
 from lex6.embeddings import EmbeddingManager
 from lex6.ingestion.language import LLMTranslator
@@ -63,3 +64,8 @@ def build_retriever(kind: str = "advanced", settings: Settings | None = None, ve
     if kind == "advanced":
         return AdvancedRAGRetriever(vs, embedder, build_hyde_client(s), get_cross_encoder(s.reranker_model))
     raise ValueError(f"Unknown retriever kind: {kind!r}")
+
+
+def build_agent(settings: Settings | None = None, vector_store: VectorStore | None = None) -> RetrievalAgent:
+    s = settings or get_settings()
+    return RetrievalAgent(build_retriever("advanced", s, vector_store), build_llm(s))
