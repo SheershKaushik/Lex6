@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -70,7 +71,9 @@ Message: {question}
 
 CITATION_REMINDER = (
     "### Citation format\nAfter every claim put the number of the context chunk it comes from in square "
-    "brackets, e.g. [1] or [2, 3]. Cite chunk numbers, not file names.\n\n### Answer"
+    "brackets, e.g. [1] or [2, 3]. Cite chunk numbers, not file names, and do not copy the chunk headers. "
+    "Read every chunk before saying the context lacks something; never claim information is missing and then "
+    "use it.\n\n### Answer"
 )
 
 _SMALL_TALK_RE = re.compile(
@@ -140,6 +143,43 @@ def infer_citations(answer: str, chunks: list[dict[str, Any]], shingle: int = 8)
     return cited
 
 
+_SOURCE_ECHO_RE = re.compile(r"^[ \t]*\[\d+(?:\s*,\s*\d+)*\][ \t]*Source:.*(?:\n|$)", re.MULTILINE)
+
+
+def strip_source_echoes(answer: str) -> str:
+    """Remove copied context headers ("[4] Source: file, page 1"); their numbers are often wrong."""
+    return _SOURCE_ECHO_RE.sub("", answer)
+
+
+def _shingles(text: str, n: int) -> set[tuple[str, ...]]:
+    tokens = re.findall(r"\w+", text.lower())
+    return {tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1)}
+
+
+def add_missing_citations(answer: str, chunks: list[dict[str, Any]], shingle: int = 8) -> tuple[str, list[int]]:
+    """Append ``[m]`` to uncited sentences/lines that quote chunk ``m`` verbatim (``shingle`` words)."""
+    chunk_grams = [_shingles(d["content"], shingle) for d in chunks]
+    added: list[int] = []
+    parts = re.split(r"((?<=[.!?])[ \t]+|\n+)", answer)
+    for k in range(0, len(parts), 2):
+        sentence = parts[k]
+        if not sentence.strip() or _CITATION_RE.search(sentence):
+            continue
+        grams = _shingles(sentence, shingle)
+        nums = [i for i, cg in enumerate(chunk_grams, start=1) if grams & cg]
+        if not nums:
+            continue
+        marker = f" [{', '.join(map(str, nums))}]"
+        stripped = sentence.rstrip()
+        trail = sentence[len(stripped) :]
+        if stripped[-1] in ".!?;:":
+            parts[k] = stripped[:-1] + marker + stripped[-1] + trail
+        else:
+            parts[k] = stripped + marker + trail
+        added.extend(n for n in nums if n not in added)
+    return ("".join(parts) if added else answer), added
+
+
 def _content_words(text: str) -> set[str]:
     return {t for t in re.findall(r"\w+", text.lower()) if len(t) > 3}
 
@@ -149,19 +189,32 @@ def verify_citations(
 ) -> tuple[str, list[tuple[int, int]]]:
     """Re-point a sentence's ``[n]`` to the chunk that actually supports it.
 
-    Small local models often attach the wrong number. A marker is moved from chunk ``n`` to chunk ``m``
-    when ``m`` covers at least ``min_support`` of the sentence's content words and beats ``n`` by ``margin``.
+    Small local models often attach the wrong number. Support = IDF-weighted share of the sentence's content
+    words found in a chunk (words shared by many chunks count less). A marker moves from chunk ``n`` to chunk
+    ``m`` when ``m`` has at least ``min_support`` and beats ``n`` by ``margin``. Sentences and lines are checked
+    separately; formatting is preserved.
     """
     chunk_words = [_content_words(d["content"]) for d in chunks]
+    n_chunks = len(chunks)
+    df: dict[str, int] = {}
+    for cw in chunk_words:
+        for w in cw:
+            df[w] = df.get(w, 0) + 1
+
+    def idf(w: str) -> float:
+        return math.log(1 + n_chunks / df[w])
+
     fixes: list[tuple[int, int]] = []
-    out = []
-    for sentence in re.split(r"(?<=[.!?])\s+", answer):
-        words = _content_words(_CITATION_RE.sub("", sentence))
+    parts = re.split(r"((?<=[.!?])[ \t]+|\n+)", answer)
+    for k in range(0, len(parts), 2):
+        sentence = parts[k]
+        # Paraphrase words found in no chunk can't discriminate between chunks.
+        words = {w for w in _content_words(_CITATION_RE.sub("", sentence)) if w in df}
         if not words or not _CITATION_RE.search(sentence):
-            out.append(sentence)
             continue
-        support = [len(words & cw) / len(words) for cw in chunk_words]
-        best = max(range(len(chunks)), key=lambda i: support[i]) + 1
+        total = sum(idf(w) for w in words)
+        support = [sum(idf(w) for w in words & cw) / total for cw in chunk_words]
+        best = max(range(n_chunks), key=lambda i: support[i]) + 1
 
         def repl(match: re.Match, support=support, best=best) -> str:
             nums = []
@@ -173,8 +226,16 @@ def verify_citations(
                     nums.append(n)
             return f"[{', '.join(map(str, nums))}]"
 
-        out.append(_CITATION_RE.sub(repl, sentence))
-    return " ".join(out) if fixes else answer, fixes
+        parts[k] = _CITATION_RE.sub(repl, sentence)
+    return ("".join(parts) if fixes else answer), fixes
+
+
+def drop_contradictory_abstention(answer: str) -> str:
+    """Remove the 'insufficient information' boilerplate when the model answered (with citations) anyway."""
+    if INSUFFICIENT_CONTEXT not in answer or not _CITATION_RE.search(answer):
+        return answer
+    stripped = answer.replace(INSUFFICIENT_CONTEXT, "").strip()
+    return stripped or answer
 
 
 @dataclass
@@ -305,16 +366,19 @@ class RetrievalAgent:
             context=format_context(context), question=question, insufficient=INSUFFICIENT_CONTEXT
         ).replace("### Answer", CITATION_REMINDER)
         raw_answer = self.llm.generate(prompt, max_tokens=self.answer_max_tokens)
-        answer, cited = sanitize_citations(raw_answer, len(context))
+        answer, cited = sanitize_citations(strip_source_echoes(raw_answer), len(context))
         mode = "explicit" if cited else "none"
         if cited:
             answer, fixes = verify_citations(answer, context)
             if fixes:
                 steps.append(AgentStep("verify_citations", {"remapped": fixes}))
-                cited = extract_citations(answer)
-        if not cited:
-            cited = infer_citations(answer, context)
-            mode = "inferred" if cited else "none"
+        answer, added = add_missing_citations(answer, context)
+        if added:
+            steps.append(AgentStep("add_citations", {"quoted_chunks": added}))
+            mode = mode if cited else "inferred"
+        cited = extract_citations(answer)
+        if cited:
+            answer = drop_contradictory_abstention(answer)
         sources = build_sources(context)
         steps.append(AgentStep("answer", {"chunks": len(context), "cited": cited, "citation_mode": mode}))
         return AgentResponse(

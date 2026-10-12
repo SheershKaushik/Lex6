@@ -83,6 +83,15 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from lex6.api import create_app
+
+    uvicorn.run(create_app(), host=args.host, port=args.port)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="lex6", description="Agentic RAG over climate-law documents")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -108,6 +117,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--top-k", type=int, default=5, help="baseline top_k")
     p.add_argument("--output", default=None, help="write full per-question results as JSON")
     p.set_defaults(func=_cmd_eval)
+
+    p = sub.add_parser("serve", help="Serve the three.html UI and the HTTP API")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8000)
+    p.set_defaults(func=_cmd_serve)
     return parser
 
 

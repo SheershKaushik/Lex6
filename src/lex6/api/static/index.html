@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>JustN0W ASPA-6</title>
+  <style>
+    :root{--bg:#f6f8fa;--panel:#ffffff;--accent:#68246d;--muted:#6b7280;--danger:#dc2626}
+    html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
+    body{background:var(--bg);color:#111827}
+    .app{display:flex;height:100vh}
+    .sidebar{width:260px;background:linear-gradient(180deg,#68246d,#68246d);color:#fff;padding:20px;box-shadow:2px 0 12px rgba(11,15,23,0.06)}
+    .logo{font-weight:700;font-size:18px;letter-spacing:0.3px;margin-bottom:18px}
+    .nav{margin-top:18px}
+    .nav button{display:flex;align-items:center;width:100%;padding:10px 12px;border-radius:8px;border:0;background:transparent;color:rgba(255,255,255,0.95);margin-bottom:8px;cursor:pointer}
+    .nav button.active{background:rgba(255,255,255,0.06)}
+    .main{flex:1;padding:24px;overflow:auto}
+    .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+    .card{background:var(--panel);border-radius:10px;padding:16px;box-shadow:0 1px 2px rgba(16,24,40,0.04);margin-bottom:12px}
+    .grid{display:grid;grid-template-columns:1fr 420px;gap:16px}
+    .upload-area{border:2px dashed #e6e9ee;border-radius:8px;padding:18px;text-align:center;background:linear-gradient(180deg, rgba(15,118,110,0.03), transparent)}
+    input[type=file]{display:none}
+    .btn{display:inline-block;padding:8px 12px;border-radius:8px;border:0;background:var(--accent);color:white;cursor:pointer}
+    .btn.secondary{background:#e6eef0;color:#68246d}
+    .small{font-size:13px;color:var(--muted)}
+    .documents-list{max-height:300px;overflow:auto}
+    .doc-item{padding:10px;border-radius:8px;border:1px solid #eef2f2;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+    /* .qa-box textarea{width:100%;height:110px;border-radius:8px;border:1px solid #e6e9ee;padding:10px} */
+    .qa-box{display:flex;flex-direction:column;height:80vh}
+  .chat-container{flex:1;overflow-y:auto;padding:10px;border:1px solid #e6e9ee;border-radius:8px;background:#e0dede;margin-bottom:10px}
+  .chat-message{margin-bottom:12px;padding:10px;border-radius:8px;max-width:100%;width:auto;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;white-space:pre-wrap}
+    .chat-user{background:#4697af;color:white;align-self:flex-end}
+    .chat-bot{background:#ffffff;border:1px solid #e6e9ee;align-self:flex-start}
+    .chat-input{display:flex;gap:8px}
+    .chat-input textarea{flex:1;border-radius:8px;border:1px solid #e6e9ee;padding:10px;resize:none;height:60px}
+    .evidence{font-size:13px;color:#111827}
+    .evidence-item{padding:8px;border-radius:6px;border:1px solid #f0f3f3;margin-bottom:8px;background:#fcfffe}
+    .meta{font-size:12px;color:var(--muted)}
+    .result-badge{display:inline-block;padding:6px 10px;border-radius:999px;background:#fef3f2;color:var(--danger);font-weight:600}
+    .clause-link{color:var(--accent);cursor:pointer;text-decoration:underline}
+    .footer-note{font-size:13px;color:var(--muted);margin-top:8px}
+    .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(0,0,0,0.08);border-left-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .compare-list{display:flex;gap:8px}
+    .pill{padding:6px 10px;border-radius:999px;border:1px solid #e6eef0;background:white}
+  </style>
+</head>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <img src="/static/du.png" alt="Durham University Logo" style="max-width:255px; height:auto;" />
+      <div class="logo">JustN0W</div>
+      <div class="small">Upload documents, run compliance checks, and produce evidence-backed reports.</div>
+      <nav class="nav" role="navigation" aria-label="Primary">
+        <button id="nav-upload" class="active">📁 Upload</button>
+        <button id="nav-compare">🔀 Compare</button>
+        <button id="nav-qa">❓ Ask</button>
+        <!-- <button id="nav-reports">📄 Reports</button> -->
+        <button id="nav-kg">🕸 Knowledge Graph</button>
+      </nav>
+      
+      <div style="position:absolute;bottom:20px;left:20px;right:20px;font-size:12px;color:rgba(255,255,255,0.9)">User: <strong>sheersh.kaushik@durham.ac.uk</strong></div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <h2 style="margin:0">Compliance Workspace</h2>
+        <div class="meta">Backend: <span id="backend-status">unknown</span></div>
+      </div>
+
+      <div id="view-upload" class="view">
+        <div class="grid">
+          <div>
+            <div class="card upload-area">
+              <h3 style="margin-top:0">Upload documents</h3>
+              <p class="small">Drop PDFs or click to upload treaties, NDCs, COP decisions (you can upload many files at once).</p>
+              <div style="margin-top:12px">
+                <label class="btn" for="file-input">Select files</label>
+                <input id="file-input" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" multiple />
+                <button class="btn secondary" id="start-ingest">Start ingest</button>
+                <div id="upload-progress" style="margin-top:10px"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h4 style="margin:0 0 8px 0">Uploaded documents</h4>
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+                <input id="doc-search" placeholder="Search documents by name..." style="flex:1;padding:8px;border-radius:8px;border:1px solid #e6e9ee" />
+                <button class="btn secondary" id="btn-clear-search">Clear</button>
+              </div>
+              <div class="documents-list" id="documents-list">
+                <!-- populated by JS -->
+              </div>
+              <div class="footer-note">Select a document to inspect pages, clauses, and run an assessment.</div>
+            </div>
+
+            <div class="card">
+              <h4 style="margin:0 0 8px 0">Quick actions</h4>
+              <button class="btn" id="btn-run-audit">Run compliance audit (selected)</button>
+              <button class="btn" id="btn-open-qa" style="margin-left:8px">Go to Ask</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="card">
+              <h4 id="doc-title">No document selected</h4>
+              <div class="meta" id="doc-meta">Choose a document to see pages and clauses</div>
+            </div>
+
+            <div id="doc-pages" class="card" style="min-height:220px">
+              <h4 style="margin-top:0">Pages</h4>
+              <div id="pages-container" class="small">No document selected</div>
+            </div>
+
+            <div class="card">
+              <h4 style="margin-top:0">Selected clause</h4>
+              <div id="selected-clause" class="evidence">No clause selected</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      
+      <!-- Q&A CHATBOX VIEW -->
+      <div id="view-qa" class="view" style="display:none">
+        <div class="card qa-box">
+          <h3>Chat with the corpus</h3>
+          <div id="chat-container" class="chat-container"></div>
+          <div class="chat-input">
+                    <textarea id="qa-input" placeholder="Ask about Article 6, NDC alignment, carbon leakage, MRV or double-counting..."></textarea>
+                    <select id="answer-length" style="width:120px;border-radius:8px;padding:8px">
+                      <option value="512">Learner</option>
+                      <option value="1024" selected>Familiar</option>
+                      <option value="8192">Law Expert</option>
+                    </select>
+                    <button class="btn" id="btn-ask">Ask</button>
+                  </div>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+            <label class="small">Limit search to document:</label>
+            <select id="qa-doc-filter"><option value="">All documents</option></select>
+            <div id="qa-status" style="margin-left:8px"></div>
+            <button class="btn secondary" id="btn-export-pdf">📄 Export Chat</button>
+          </div>
+        </div>
+      </div>
+
+
+      <div id="view-compare" class="view" style="display:none">
+        <div class="card">
+          <h3>Comparative analysis</h3>
+          <p class="small">Select two or more documents and a topic to compare (e.g., carbon_leakage, MRV).</p>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+            <select id="compare-docs" multiple style="width:60%"></select>
+            <select id="compare-topic"><option value="carbon_leakage">carbon_leakage</option><option value="MRV">MRV</option><option value="double_counting">double_counting</option></select>
+            <button class="btn" id="btn-compare">Compare</button>
+          </div>
+        </div>
+        <div id="compare-results" style="margin-top:12px"></div>
+      </div>
+
+      <div id="view-reports" class="view" style="display:none">
+        <div class="card">
+          <h3>Reports</h3>
+          <p class="small">Generate executive one-pagers or detailed legal memos from assessments.</p>
+          <div style="margin-top:8px">
+            <label class="small">Choose assessment:</label>
+            <select id="report-assessments"></select>
+            <button class="btn" id="btn-generate-pdf">Export PDF</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-kg" class="view" style="display:none">
+        <div class="card">
+          <h3>Knowledge Graph (preview)</h3>
+          <p class="small">Interactive graph showing document → clauses → standard nodes. (Simple preview here; full graph explorer in product.)</p>
+          <div id="kg-preview" style="min-height:220px">No data</div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+<script>
+// --- Basic UI plumbing & expected backend contract ---
+const api = {
+  upload: '/api/documents',              // POST multipart/form-data -> {document_ids: [...]}
+  listDocuments: '/api/documents',       // GET -> [{id,title,doc_type,uploaded_at}]
+  getDocumentPages: (id)=>`/api/documents/${id}/pages`, // GET -> [{page_number,text,thumbnail_url}]
+  runAssessment: '/api/assessments',    // POST {document_ids, query} -> {assessment_id, answer, detailed_explanation, evidence}
+  runCompare: '/api/compare',           // POST {doc_ids, topic} -> {comparison}
+  listAssessments: '/api/assessments',  // GET
+  downloadReport: (id,fmt)=>`/api/reports/${id}?format=${fmt}`
+}
+
+let selectedDocId = null;
+let documentsCache = [];
+
+async function fetchBackendStatus(){
+  try{
+    const res = await fetch('/api/health');
+    const j = await res.json();
+    document.getElementById('backend-status').innerText = j.status || 'turbo';
+  }catch(e){document.getElementById('backend-status').innerText = 'down'}
+}
+
+async function listDocuments(){
+  const res = await fetch(api.listDocuments);
+  if(!res.ok) return;
+  const docs = await res.json();
+  documentsCache = docs;
+  renderDocuments();
+}
+
+// renderDocuments: render documents-list and update select dropdowns
+function renderDocuments(filter){
+  const container = document.getElementById('documents-list'); container.innerHTML='';
+  const qaFilter = document.getElementById('qa-doc-filter'); const compareDocs = document.getElementById('compare-docs');
+  qaFilter.innerHTML='<option value="">All documents</option>';
+  compareDocs.innerHTML='';
+
+  const q = (filter||'').toLowerCase();
+  const shown = documentsCache.filter(d=>{ const name = (d.title||d.filename||'').toLowerCase(); return !q || name.includes(q); });
+
+  shown.forEach(d=>{
+    const div = document.createElement('div'); div.className='doc-item';
+    div.innerHTML = `<div><strong>${d.title||d.filename}</strong><div class='meta'>${d.doc_type||''} • ${new Date(d.uploaded_at).toLocaleDateString()}</div></div><div><button class='btn' onclick="selectDoc('${d.id}')">Open</button></div>`;
+    container.appendChild(div);
+    const opt = document.createElement('option'); opt.value=d.id; opt.textContent=d.title||d.filename; qaFilter.appendChild(opt);
+    const opt2 = document.createElement('option'); opt2.value=d.id; opt2.textContent=d.title||d.filename; compareDocs.appendChild(opt2);
+  })
+}
+
+// Wire search input to filter documents as user types
+document.getElementById('doc-search').addEventListener('input', (e)=>{
+  renderDocuments(e.target.value);
+});
+document.getElementById('btn-clear-search').addEventListener('click', ()=>{ document.getElementById('doc-search').value=''; renderDocuments(); });
+
+async function selectDoc(id){
+  selectedDocId = id;
+  const doc = documentsCache.find(x=>x.id===id);
+  document.getElementById('doc-title').innerText = doc.title || doc.filename;
+  document.getElementById('doc-meta').innerText = `${doc.doc_type||''} • Uploaded ${new Date(doc.uploaded_at).toLocaleString()}`;
+  const pages = await (await fetch(api.getDocumentPages(id))).json();
+  const pc = document.getElementById('pages-container'); pc.innerHTML='';
+  pages.forEach(p=>{
+    const el = document.createElement('div'); el.style.marginBottom='8px';
+    // show full page preview by default (UI will handle overflow)
+    el.innerHTML = `<div><strong>Page ${p.page_number}</strong> <span class='meta'> (OCR conf: ${Math.round((p.ocr_confidence||0)*100)}%)</span></div><div class='small' style='margin-top:6px'>${escapeHtmlSnippet(p.text,200)}</div>`;
+    el.onclick = ()=>showPageClauses(id,p.page_number);
+    pc.appendChild(el);
+  });
+}
+
+  // escapeHtmlSnippet: if n is large (or omitted), returns full text (escaped)
+  function escapeHtmlSnippet(t,n){ if(!t) return ''; const s = t.replace(/</g,'&lt;').replace(/>/g,'&gt;'); if(typeof n==='number' && n>0 && s.length>n) return s.slice(0,n)+'…'; return s }
+
+async function showPageClauses(docId,pageNumber){
+  const res = await fetch(`/api/documents/${docId}/pages/${pageNumber}/clauses`);
+  if(!res.ok) return alert('Failed to fetch clauses');
+  const clauses = await res.json();
+  const container = document.getElementById('selected-clause'); container.innerHTML='';
+  if(!clauses.length) { container.innerText='No clauses detected for this page'; return }
+  clauses.forEach(c=>{
+    const el = document.createElement('div'); el.className='evidence-item';
+    el.innerHTML = `<div style='display:flex;justify-content:space-between;align-items:center'><div><strong>Clause: ${c.section_label||c.id.slice(0,8)}</strong><div class='meta'>Page ${c.page_number} • Topics: ${(c.topics||[]).join(', ')}</div></div><div><button class='btn secondary' onclick='inspectClause("${c.id}")'>Inspect</button></div></div><div style='margin-top:8px' class='small'>${escapeHtmlSnippet(c.text,200)}</div>`;
+    container.appendChild(el);
+  })
+}
+
+async function inspectClause(clauseId){
+  const res = await fetch(`/api/clauses/${clauseId}`);
+  if(!res.ok) return alert('failed');
+  const c = await res.json();
+  const modal = document.getElementById('selected-clause');
+  modal.innerHTML = `<div><strong>${c.section_label||'Clause'}</strong> <div class='meta'>Doc ${c.document_id} • Page ${c.page_number} • OCR ${Math.round((c.ocr_confidence||0)*100)}%</div><pre style='white-space:pre-wrap;margin-top:8px'>${c.text}</pre><div style='margin-top:8px'><button class='btn' onclick='copyClause("${clauseId}")'>Copy citation</button></div></div>`;
+}
+function copyClause(id){ navigator.clipboard.writeText(id).then(()=>alert('Clause id copied')) }
+
+// --- Upload flow ---
+const fileInput = document.getElementById('file-input');
+let selectedFiles = [];
+fileInput.addEventListener('change',(e)=>{selectedFiles = Array.from(e.target.files); document.getElementById('upload-progress').innerText = selectedFiles.length+ ' file(s) selected';});
+
+document.getElementById('start-ingest').addEventListener('click',async ()=>{
+  if(!selectedFiles.length) return alert('Select files first');
+  const progress = document.getElementById('upload-progress');
+  progress.innerHTML = '<span class="spinner"></span> Uploading...';
+  const form = new FormData(); selectedFiles.forEach(f=>form.append('files',f));
+  const res = await fetch(api.upload,{method:'POST',body:form});
+  if(!res.ok){progress.innerText='Upload failed'; return}
+  const j = await res.json(); progress.innerText = 'Upload finished' + (j.reports ? ': ' + j.reports.map(r=>`${r.filename} - ${r.status}${r.errors&&r.errors.length?' ('+r.errors.join('; ')+')':''}`).join(', ') : '');
+  await listDocuments();
+});
+
+// --- CHATBOX BEHAVIOR ---
+document.getElementById('btn-ask').addEventListener('click', async ()=>{
+  const q = document.getElementById('qa-input').value.trim();
+  if(!q) return alert('Write a question');
+  const chat = document.getElementById('chat-container');
+  
+  // Add user message
+  const userMsg = document.createElement('div');
+  userMsg.className='chat-message chat-user';
+  userMsg.textContent=q;
+  chat.appendChild(userMsg);
+  chat.scrollTop = chat.scrollHeight;
+
+  document.getElementById('qa-input').value='';
+  const status = document.getElementById('qa-status');
+  status.innerHTML='<span class="spinner"></span> Thinking...';
+
+  const docFilter=document.getElementById('qa-doc-filter').value;
+  const lengthSel = document.getElementById('answer-length');
+  const maxTokens = parseInt(lengthSel.value || '4096',10);
+  const payload={query:q, document_id: docFilter||null, max_tokens: maxTokens, preview_length: null};
+  const res=await fetch('/api/assessments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(!res.ok){status.innerText='Failed';return}
+  const r=await res.json();
+  status.innerText='Done';
+
+  // Helper: escape and preserve newlines
+  function escapeHtml(s){ if(s===null||s===undefined) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function nl2br(s){ return String(s).replace(/\r\n|\r|\n/g,'<br/>'); }
+  function formatAnswer(s){ return nl2br(escapeHtml(s)); }
+
+  // Add bot message (render full content safely)
+  const botMsg=document.createElement('div');
+  botMsg.className='chat-message chat-bot';
+  const shortHtml = formatAnswer(r.short_answer||'');
+  const detailsHtml = (r.detailed_explanation||[]).map(d=>formatAnswer(d)).join('<br/><br/>');
+  botMsg.innerHTML = `<strong>Answer:</strong><div style="margin-top:6px">${shortHtml}</div><br/><strong>Details:</strong><div style="margin-top:6px">${detailsHtml}</div>`;
+  chat.appendChild(botMsg);
+  chat.scrollTop=chat.scrollHeight;
+});
+
+// --- Export Chat to PDF ---
+document.getElementById('btn-export-pdf').addEventListener('click',()=>{
+  const chat=document.getElementById('chat-container').innerHTML;
+  const newWin=window.open("","Chat Export");
+  newWin.document.write("<pre>"+chat.replace(/<br\/?>/g,"\n").replace(/<[^>]*>?/gm,'')+"</pre>");
+  newWin.print();
+});
+
+function selectEvidence(docId,page){ selectDoc(docId); setTimeout(()=>showPageClauses(docId,page),10000); }
+
+// --- Compare ---
+document.getElementById('btn-compare').addEventListener('click',async ()=>{
+  const sel = Array.from(document.getElementById('compare-docs').selectedOptions).map(o=>o.value);
+  const topic = document.getElementById('compare-topic').value;
+  if(sel.length<2) return alert('Select at least two documents');
+
+  const lengthSel = document.getElementById('answer-length');
+  const maxTokens = parseInt(lengthSel.value || '4096',10);
+
+  const res = await fetch(api.runCompare,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({doc_ids:sel,topic,max_tokens:maxTokens})});
+  if(!res.ok) return alert('Failed to compare');
+  const j = await res.json(); renderCompare(j);
+});
+function renderCompare(j){ const out = document.getElementById('compare-results'); out.innerHTML=''; const card = document.createElement('div'); card.className='card'; card.innerHTML = `<h4>Comparison: ${j.topic}</h4><div class='small'>${j.summary||''}</div>`; const table = document.createElement('div'); table.style.marginTop='12px'; (j.items||[]).forEach(it=>{ const row = document.createElement('div'); row.className='evidence-item'; row.innerHTML = `<div><strong>${it.document_title}</strong><div class='meta'>Ambition: ${it.ambition}</div></div><div style='margin-top:6px' class='small'>Key clause: ${escapeHtmlSnippet(it.key_clause_text,250)}</div>`; table.appendChild(row); }); card.appendChild(table); out.appendChild(card); }
+
+// New renderer for structured compare response
+function renderCompare(j){
+  const out = document.getElementById('compare-results'); out.innerHTML='';
+  const card = document.createElement('div'); card.className='card';
+
+  if(j.error){
+    card.innerHTML = `<h4>Comparison (partial)</h4><div class='small'>Error: ${escapeHtmlSnippet(j.error,500)}</div><pre style='white-space:pre-wrap;margin-top:8px'>${escapeHtmlSnippet(j.raw||'',2000)}</pre>`;
+    out.appendChild(card); return;
+  }
+
+  const simHtml = (j.similarities||[]).map(s=>`<li>${escapeHtmlSnippet(s,1000)}</li>`).join('');
+  const diffHtml = (j.differences||[]).map(s=>`<li>${escapeHtmlSnippet(s,1000)}</li>`).join('');
+
+  card.innerHTML = `<h4>Comparison: ${escapeHtmlSnippet(j.topic||'')}</h4><div style='margin-top:6px'><strong>Similarities</strong><ul>${simHtml}</ul></div><div style='margin-top:6px'><strong>Differences</strong><ul>${diffHtml}</ul></div>`;
+
+  (j.documents||[]).forEach(doc=>{
+    const docCard = document.createElement('div'); docCard.className='card';
+    const clausesHtml = (doc.clauses||[]).map(c=>`<div class='evidence-item'><div class='small'><strong>Clause</strong><div>${escapeHtmlSnippet(c.text,500)}</div><div class='meta'>${escapeHtmlSnippet(c.explanation,500)}</div></div></div>`).join('');
+    docCard.innerHTML = `<h4 style='margin-top:0'>${escapeHtmlSnippet(doc.document_title||doc.document_id)}</h4><div style='margin-top:8px'>${clausesHtml}</div>`;
+    out.appendChild(docCard);
+  });
+
+  out.insertBefore(card, out.firstChild);
+}
+
+// --- Reports ---
+async function loadAssessments(){ const res = await fetch(api.listAssessments); if(!res.ok) return; const j = await res.json(); const sel = document.getElementById('report-assessments'); sel.innerHTML=''; j.forEach(a=>{ const opt = document.createElement('option'); opt.value=a.id; opt.textContent = `${a.query || a.id} • ${new Date(a.created_at).toLocaleString()}`; sel.appendChild(opt); }); }
+
+// --- Navigation ---
+document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>{ document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); const id = b.id.replace('nav-','view-'); document.querySelectorAll('.view').forEach(v=>v.style.display='none'); document.getElementById(id).style.display='block'; }));
+
+// --- Init ---
+(async ()=>{ await fetchBackendStatus(); await listDocuments(); await loadAssessments(); })();
+
+</script>
+</body>
+</html>

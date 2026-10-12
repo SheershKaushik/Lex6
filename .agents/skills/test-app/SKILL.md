@@ -81,3 +81,43 @@ lex6 ask --json "..."                   # full AgentResponse: steps, sources, ci
 
 Expected trace: `route -> plan -> retrieve -> reflect [-> retrieve] -> [verify_citations] -> answer`;
 `citation_mode=explicit` with `[n]` markers that point at chunks in `sources`. ~1.5-2 min per question on CPU.
+
+## 6. Eval harness (agent vs naive single-shot baseline)
+
+```bash
+lex6 eval --output /tmp/eval_results.json     # 11 fixed questions over data/sample, ~25 min on CPU
+lex6 eval --only q03,q04,q11                  # quick subset
+```
+
+Prints a per-question table and a metric comparison table (source_recall, keyword_coverage,
+citation_precision, abstention, routing, overall, latency_s) with a delta column. Needs the sample corpus ingested.
+
+## 7. Web UI (three.html, Upload + Ask)
+
+```bash
+# fresh data dir for Upload testing; set the translation model too in case .env overrides it
+export LEX6_LLM_MODEL=qwen2.5:3b LEX6_TRANSLATION_MODEL=qwen2.5:3b LEX6_DATA_DIR=/tmp/lex6ui-$(date +%s)
+lex6 serve --port 8000          # open http://127.0.0.1:8000/
+curl -s localhost:8000/api/health
+```
+
+UI test flow, which must be recorded before any PR that touches `src/lex6/api/` or the HTML:
+1. Sidebar shows the Durham logo and `Backend: ok`.
+2. Upload: choose files from `data/sample/` (PDF, DOCX and TXT are all accepted), click **Start ingest**. The status line
+   lists each file as `ingested` or `rejected (reason)`, e.g. a duplicate. Documents appear in the list. **Open** shows pages.
+3. Ask: type a question (e.g. "What deduction applies when leakage cannot be quantified?"), click **Ask**.
+   The bot message shows the answer with `[n]` citations. Details list the cited sources
+   (file, page, score), the search queries and the agent steps. Check that every `[n]` maps (under **Cited sources**)
+   to the chunk that actually states the fact - for this question, the bilateral DOCX - not just that the right
+   document appears under "Other retrieved context". The answer must not also claim the context is insufficient.
+4. Ask "Hello, who are you?". The answer comes back directly: "no document retrieval was needed".
+5. The "All documents" filter, set to one document, restricts the citations to that document.
+
+CPU timings (qwen2.5:3b, no GPU): ingesting the 3 sample files takes ~7 min (French translation dominates), one agent
+answer 2-7 min. Watch the server log for request completion before assuming the browser is stuck, and don't re-click
+**Start ingest** / **Ask** while a request is running.
+
+For translated PDFs, page previews prove the text is English, not that the translation is faithful: inspect the
+chunks for repeated or invented sentences (small local models can loop) and report that separately.
+
+Compare, Reports and Knowledge Graph are deferred and are expected to do nothing or return 404.
