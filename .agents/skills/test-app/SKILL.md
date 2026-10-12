@@ -70,3 +70,14 @@ lex6 ask "What is the Paris Agreement?" --retriever naive          # dense-only 
 (first run downloads `cross-encoder/ms-marco-MiniLM-L-6-v2`). Expect the bilateral-agreement DOCX
 (Article 5, corresponding adjustments) as source [1]. Scores: advanced = cross-encoder logits, naive = cosine.
 ~45 s per question on a CPU-only VM.
+
+## 5. Retrieval agent (default for `lex6 ask`)
+
+```bash
+lex6 ask "What must the host Party do to avoid double counting of ITMOs?"   # trace on stderr
+lex6 ask "Hello, who are you?"          # expect: no retrieval (route -> small talk)
+lex6 ask --json "..."                   # full AgentResponse: steps, sources, citations, citation_mode
+```
+
+Expected trace: `route -> plan -> retrieve -> reflect [-> retrieve] -> [verify_citations] -> answer`;
+`citation_mode=explicit` with `[n]` markers that point at chunks in `sources`. ~1.5-2 min per question on CPU.
