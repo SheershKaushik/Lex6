@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections import defaultdict
 from typing import Protocol
 
@@ -53,6 +54,34 @@ TRANSLATION_SYSTEM = (
 )
 
 
+_SEGMENT_RE = re.compile(r"[^.,;:!?]+[.,;:!?]*")
+
+
+def collapse_repetitions(text: str, min_chars: int = 20, max_cycle: int = 4) -> str:
+    """Drop immediately repeated runs of 1..``max_cycle`` clauses.
+
+    Small local models sometimes loop on one phrase while translating.
+    """
+
+    def key(seg: str) -> str:
+        return re.sub(r"\W+", " ", seg).strip().lower()
+
+    segs = _SEGMENT_RE.findall(text)
+    out: list[str] = []
+    i = 0
+    while i < len(segs):
+        for w in range(1, max_cycle + 1):
+            block, prev = segs[i : i + w], out[-w:]
+            keys = [key(x) for x in block]
+            if len(block) == w == len(prev) and keys == [key(x) for x in prev] and len(" ".join(keys)) >= min_chars:
+                i += w
+                break
+        else:
+            out.append(segs[i])
+            i += 1
+    return "".join(out)
+
+
 class LLMTranslator:
     """Translates text with a local Ollama model, in pieces small enough for the model's context."""
 
@@ -67,7 +96,11 @@ class LLMTranslator:
         out = []
         for piece in pieces:
             prompt = f"Translate this {language_name(source_language)} text into English:\n\n{piece}"
-            translated = self.llm.generate(prompt, system=TRANSLATION_SYSTEM, max_tokens=2048).strip()
+            # ~4 chars/token; a translation needs about as many tokens as its source, so cap runaway generations
+            max_tokens = min(2048, len(piece) // 2 + 128)
+            translated = collapse_repetitions(
+                self.llm.generate(prompt, system=TRANSLATION_SYSTEM, max_tokens=max_tokens)
+            ).strip()
             if not translated:
                 raise TranslationError("translator returned empty output")
             out.append(translated)

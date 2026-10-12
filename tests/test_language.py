@@ -76,3 +76,24 @@ def test_translator_exception_wrapped():
 
     with pytest.raises(TranslationError, match="ollama down"):
         LanguageNormalizer(Boom()).normalize([Document(page_content=FR, metadata={"source_file": "f.txt"})])
+
+
+def test_collapse_repetitions_removes_translation_loops():
+    from lex6.ingestion.language import collapse_repetitions
+
+    loop = "and Considering that the Convention should be implemented in a manner that is fair, "
+    text = "The Parties, " + loop * 5 + "have agreed as follows: Article 1. Article 1."
+    out = collapse_repetitions(text)
+    assert out.count("Considering that the Convention") == 1
+    assert out.startswith("The Parties, and Considering") and out.endswith("Article 1. Article 1.")
+    assert collapse_repetitions("A, B. A, B.") == "A, B. A, B."
+
+
+def test_translator_caps_tokens_and_collapses_output():
+    from lex6.ingestion.language import LLMTranslator
+    from tests.conftest import ScriptedLLM
+
+    llm = ScriptedLLM(fn=lambda p, s: "It shall be fair, ambitious and effective; " * 4)
+    out = LLMTranslator(llm).translate("Il doit être équitable.", "fr")
+    assert out == "It shall be fair, ambitious and effective;"
+    assert llm.prompts[0]["max_tokens"] == len("Il doit être équitable.") // 2 + 128
