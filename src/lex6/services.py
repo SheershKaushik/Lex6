@@ -8,7 +8,8 @@ from lex6.config import Settings, get_settings
 from lex6.embeddings import EmbeddingManager
 from lex6.ingestion.language import LLMTranslator
 from lex6.ingestion.pipeline import IngestionPipeline
-from lex6.llm import OllamaLLM
+from lex6.llm import LLMClientWrapper, OllamaLLM
+from lex6.retrieval import AdvancedRAGRetriever, CrossEncoderWrapper, RAGRetriever
 from lex6.vectorstore import VectorStore
 
 
@@ -37,3 +38,28 @@ def build_ingestion_pipeline(settings: Settings | None = None, vector_store: Vec
         translator=translator,
         settings=s,
     )
+
+
+@lru_cache
+def get_cross_encoder(model_name: str) -> CrossEncoderWrapper:
+    return CrossEncoderWrapper(model_name)
+
+
+def build_llm(settings: Settings | None = None) -> OllamaLLM:
+    return OllamaLLM(settings=settings or get_settings())
+
+
+def build_hyde_client(settings: Settings | None = None) -> LLMClientWrapper:
+    return LLMClientWrapper(settings=settings or get_settings())
+
+
+def build_retriever(kind: str = "advanced", settings: Settings | None = None, vector_store: VectorStore | None = None):
+    """``naive`` = notebook ``RAGRetriever``; ``advanced`` = HyDE + BM25 + cross-encoder."""
+    s = settings or get_settings()
+    vs = vector_store or build_vector_store(s)
+    embedder = get_embedder(s.embedding_model)
+    if kind == "naive":
+        return RAGRetriever(vs, embedder)
+    if kind == "advanced":
+        return AdvancedRAGRetriever(vs, embedder, build_hyde_client(s), get_cross_encoder(s.reranker_model))
+    raise ValueError(f"Unknown retriever kind: {kind!r}")
