@@ -6,10 +6,12 @@ deliberately not implemented yet (their buttons get a 404).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import threading
 import uuid
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any
@@ -67,6 +69,16 @@ class Lex6Service:
         self.agent_factory = agent_factory
         self.assessments: list[dict[str, Any]] = []
         self.lock = threading.Lock()
+        self.corpus: dict[str, Any] = {
+            "status": "pending" if self.settings.auto_ingest_corpus else "disabled",
+            "dir": str(self.settings.corpus_dir),
+            "files": 0,
+            "ingested": 0,
+            "already_indexed": 0,
+            "failed": [],
+        }
+        self.corpus_hashes: set[str] = set()
+        self.session_uploads: set[str] = set()
 
     @classmethod
     def from_settings(cls, settings: Settings | None = None) -> Lex6Service:
@@ -82,6 +94,45 @@ class Lex6Service:
         return cls(vs, build_ingestion_pipeline(s, vs), build_retriever("advanced", s, vs), agent_factory, s)
 
     # --- documents -------------------------------------------------------------------
+    def sync_corpus(self) -> dict[str, Any]:
+        """Index every file in ``corpus_dir`` that isn't in the persisted store yet (matched by content hash)."""
+        root = self.settings.corpus_dir
+        if not root.is_dir():
+            self.corpus.update(status="missing")
+            return self.corpus
+        files = self.pipeline.expand([root])
+        self.corpus_hashes = {hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+        self.corpus.update(status="syncing", files=len(files), ingested=0, already_indexed=0, failed=[])
+        for path in files:
+            with self.lock:
+                (report,) = self.pipeline.ingest([path], source="corpus")
+            if report.status == "ingested":
+                self.corpus["ingested"] += 1
+            elif any(e.startswith("duplicate") for e in report.errors):
+                self.corpus["already_indexed"] += 1
+            else:
+                self.corpus["failed"].append({"filename": report.filename, "errors": report.errors})
+        self.corpus["status"] = "ready"
+        logger.info(
+            "corpus %s: %d files, %d newly ingested, %d already indexed, %d failed",
+            root,
+            len(files),
+            self.corpus["ingested"],
+            self.corpus["already_indexed"],
+            len(self.corpus["failed"]),
+        )
+        return self.corpus
+
+    def documents(self) -> list[dict[str, Any]]:
+        return [
+            {
+                **d,
+                "source": "corpus" if d.get("sha256") in self.corpus_hashes else d.get("source", "upload"),
+                "session_upload": d["id"] in self.session_uploads,
+            }
+            for d in self.vector_store.list_documents()
+        ]
+
     def ingest_uploads(self, files: list[tuple[str, bytes]]) -> dict[str, Any]:
         batch_dir = self.settings.uploads_dir / uuid.uuid4().hex[:12]
         batch_dir.mkdir(parents=True, exist_ok=True)
@@ -94,6 +145,7 @@ class Lex6Service:
             names[path] = name
         with self.lock:
             reports = self.pipeline.ingest(paths, display_names=names)
+        self.session_uploads.update(r.document_id for r in reports if r.status == "ingested")
         return {
             "document_ids": [r.document_id for r in reports if r.status == "ingested"],
             "reports": [r.to_dict() for r in reports],
@@ -178,13 +230,31 @@ def to_assessment(r: AgentResponse, req: AssessmentRequest, preview_length: int 
 
 
 def create_app(service: Lex6Service | None = None, settings: Settings | None = None) -> FastAPI:
-    app = FastAPI(title="Lex6 agentic RAG")
     state: dict[str, Lex6Service] = {}
+    state_lock = threading.Lock()
 
     def svc() -> Lex6Service:
-        if "service" not in state:
-            state["service"] = service or Lex6Service.from_settings(settings)
-        return state["service"]
+        with state_lock:
+            if "service" not in state:
+                state["service"] = service or Lex6Service.from_settings(settings)
+            return state["service"]
+
+    def sync_corpus() -> None:
+        s = svc()
+        try:
+            s.sync_corpus()
+        except Exception as e:
+            logger.exception("corpus sync failed")
+            s.corpus.update(status="error", error=str(e))
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        cfg = service.settings if service else (settings or get_settings())
+        if cfg.auto_ingest_corpus:
+            threading.Thread(target=sync_corpus, name="corpus-sync", daemon=True).start()
+        yield
+
+    app = FastAPI(title="Lex6 agentic RAG", lifespan=lifespan)
 
     if service is not None:
         state["service"] = service
@@ -199,11 +269,12 @@ def create_app(service: Lex6Service | None = None, settings: Settings | None = N
             "llm": {"model": s.settings.llm_model, "ok": llm_problem is None, "error": llm_problem},
             "documents": len(s.vector_store.list_documents()),
             "chunks": s.vector_store.ntotal,
+            "corpus": s.corpus,
         }
 
     @app.get("/api/documents")
     def list_documents() -> list[dict[str, Any]]:
-        return svc().vector_store.list_documents()
+        return svc().documents()
 
     @app.post("/api/documents")
     def upload(files: Annotated[list[UploadFile], File()]) -> dict[str, Any]:

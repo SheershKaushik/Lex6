@@ -46,7 +46,7 @@ def client(settings, fake_embedder):
 
     service = Lex6Service(vs, pipeline, RAGRetriever(vs, fake_embedder), factory, settings)
     c = TestClient(create_app(service))
-    c.factories, c.llm = factories, llm
+    c.factories, c.llm, c.service = factories, llm, service
     return c
 
 
@@ -134,3 +134,50 @@ def test_ollama_failure_returns_503_with_fix_and_health_reports_it(client, insta
         "ok": False,
         "error": "Ollama model 'deepseek-r1:8b' is not installed",
     }
+
+
+def test_corpus_indexed_once_listed_with_session_uploads(client, settings, fake_embedder, sample_dir):
+    settings.corpus_dir = sample_dir
+    first = client.service.sync_corpus()
+    assert first["status"] == "ready" and first["files"] == first["ingested"] == 4 and not first["failed"]
+    chunks = client.service.vector_store.ntotal
+
+    vs = VectorStore(
+        fake_embedder.get_embedding_dim(), persist_directory=settings.vector_store_dir, embedding_model="fake"
+    )
+    assert vs.ntotal == chunks
+    restarted = Lex6Service(
+        vs,
+        IngestionPipeline(fake_embedder, vs, FakeTranslator(), settings),
+        RAGRetriever(vs, fake_embedder),
+        None,
+        settings,
+    )
+    second = restarted.sync_corpus()
+    assert second["ingested"] == 0 and second["already_indexed"] == 4 and vs.ntotal == chunks
+
+    note = b"My own note: corresponding adjustments must be reported in the biennial transparency report."
+    r = client.post("/api/documents", files=[("files", ("my_note.txt", note, "text/plain"))])
+    assert r.json()["reports"][0]["status"] == "ingested"
+    docs = {d["filename"]: (d["source"], d["session_upload"]) for d in client.get("/api/documents").json()}
+    assert docs["Article6_glossary.txt"] == ("corpus", False)
+    assert docs["my_note.txt"] == ("upload", True)
+    assert len(docs) == 5
+    assert client.get("/api/health").json()["corpus"]["status"] == "ready"
+
+
+def test_server_startup_syncs_corpus_in_background(client, settings, sample_dir):
+    import time
+
+    settings.corpus_dir = sample_dir
+    with TestClient(create_app(client.service)) as c:
+        deadline = time.time() + 60
+        while c.get("/api/health").json()["corpus"]["status"] != "ready" and time.time() < deadline:
+            time.sleep(0.1)
+        assert c.get("/api/health").json()["corpus"]["ingested"] == 4
+        assert len(c.get("/api/documents").json()) == 4
+
+
+def test_missing_corpus_dir(client, settings, tmp_path):
+    settings.corpus_dir = tmp_path / "nope"
+    assert client.service.sync_corpus()["status"] == "missing"
