@@ -24,5 +24,10 @@ ollama pull deepseek-r1:8b     # default LEX6_LLM_MODEL (notebook model)
 # or use a smaller installed model: export LEX6_LLM_MODEL=qwen2.5:3b
 ```
 
+`lex6 serve` indexes every file in `data/sample/` (`LEX6_CORPUS_DIR`) into the FAISS store under
+`data/vector_store/` on startup, in the background. Files that are already indexed are skipped (by content hash), so
+only the first start pays for translation/embedding. Files uploaded in the UI are added to the same store and searched
+together with the corpus. Set `LEX6_AUTO_INGEST_CORPUS=false` to disable.
+
 If the model isn't installed or Ollama isn't running, `/api/health` reports `LLM unavailable` (shown in the UI
 sidebar) and Ask/CLI calls return a message saying which `ollama pull` / `ollama serve` command fixes it.
