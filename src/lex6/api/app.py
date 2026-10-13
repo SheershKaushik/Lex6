@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from lex6.agent import AgentResponse, RetrievalAgent
 from lex6.config import Settings, get_settings
 from lex6.ingestion.pipeline import IngestionPipeline
+from lex6.llm import LLMError, check_model
 from lex6.retrieval.base import Retriever, page_label
 from lex6.vectorstore import VectorStore
 
@@ -191,9 +192,11 @@ def create_app(service: Lex6Service | None = None, settings: Settings | None = N
     @app.get("/api/health")
     def health() -> dict[str, Any]:
         s = svc()
+        llm_problem = check_model(s.settings.llm_model, s.settings.ollama_base_url)
         return {
             "status": "ok",
             "llm_model": s.settings.llm_model,
+            "llm": {"model": s.settings.llm_model, "ok": llm_problem is None, "error": llm_problem},
             "documents": len(s.vector_store.list_documents()),
             "chunks": s.vector_store.ntotal,
         }
@@ -232,6 +235,9 @@ def create_app(service: Lex6Service | None = None, settings: Settings | None = N
             return svc().assess(req)
         except KeyError as e:
             raise HTTPException(404, f"unknown document {e}") from e
+        except LLMError as e:
+            logger.warning("assessment failed: %s", e)
+            raise HTTPException(503, str(e)) from e
 
     @app.get("/api/assessments")
     def list_assessments() -> list[dict[str, Any]]:
