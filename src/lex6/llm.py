@@ -24,6 +24,60 @@ def strip_think(text: str) -> str:
     return text.strip()
 
 
+class LLMError(RuntimeError):
+    """An Ollama call failed; the message says how to fix it (pull the model, start the server, ...)."""
+
+
+def model_missing_message(model: str, host: str) -> str:
+    return (
+        f"Ollama model '{model}' is not installed on {host}. Run `ollama pull {model}`, "
+        "or set LEX6_LLM_MODEL to an installed model (see `ollama list`)."
+    )
+
+
+def explain_ollama_error(exc: Exception, model: str, host: str) -> LLMError:
+    """Turn ``ollama.ResponseError`` / connection failures into an actionable ``LLMError``."""
+    status = getattr(exc, "status_code", None)
+    detail = getattr(exc, "error", None) or str(exc)
+    if status == 404:
+        msg = model_missing_message(model, host)
+    elif status in (401, 403):
+        msg = f"Ollama rejected the request for '{model}' on {host} ({status}): check OLLAMA_API_KEY. {detail}"
+    elif status is not None:
+        msg = f"Ollama error {status} from model '{model}' on {host}: {detail}"
+    else:
+        msg = f"Cannot reach Ollama at {host} ({detail}). Start it with `ollama serve`."
+    return LLMError(msg)
+
+
+_CONNECTION_ERRORS: tuple[type[BaseException], ...] = (ConnectionError,)
+try:
+    import httpx
+
+    _CONNECTION_ERRORS += (httpx.TransportError,)
+except ImportError:  # pragma: no cover
+    pass
+
+
+def _ollama_errors() -> tuple[type[BaseException], ...]:
+    from ollama import ResponseError
+
+    return (ResponseError, *_CONNECTION_ERRORS)
+
+
+def check_model(model: str, host: str) -> str | None:
+    """Return ``None`` if ``model`` is installed on the Ollama server at ``host``, else a problem description."""
+    from ollama import Client
+
+    try:
+        names = {m.model for m in Client(host=host).list().models}
+    except Exception as e:
+        return str(explain_ollama_error(e, model, host))
+    if model in names or f"{model}:latest" in names:
+        return None
+    return model_missing_message(model, host)
+
+
 class LLM(Protocol):
     def generate(self, prompt: str, *, system: str | None = None, max_tokens: int | None = None) -> str: ...
 
@@ -65,7 +119,10 @@ class OllamaLLM:
         if system:
             messages.append(SystemMessage(content=system))
         messages.append(HumanMessage(content=prompt))
-        response = self._client(max_tokens or self.num_predict).invoke(messages)
+        try:
+            response = self._client(max_tokens or self.num_predict).invoke(messages)
+        except _ollama_errors() as e:
+            raise explain_ollama_error(e, self.model_name, self.base_url) from e
         return strip_think(response.content)
 
 
@@ -101,11 +158,14 @@ class LLMClientWrapper:
         self.client = Client(host=host, headers=headers)
 
     def generate_text(self, prompt: str, max_tokens: int = 300, temperature: float = 0.7) -> str:
-        response = self.client.generate(
-            model=self.model_name,
-            prompt=prompt,
-            options={"temperature": temperature, "num_predict": max_tokens},
-        )
+        try:
+            response = self.client.generate(
+                model=self.model_name,
+                prompt=prompt,
+                options={"temperature": temperature, "num_predict": max_tokens},
+            )
+        except _ollama_errors() as e:
+            raise explain_ollama_error(e, self.model_name, self.host) from e
         return strip_think(response["response"])
 
     def generate(self, prompt: str, *, system: str | None = None, max_tokens: int | None = None) -> str:

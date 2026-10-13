@@ -7,6 +7,8 @@ import json
 import logging
 import sys
 
+from lex6.llm import LLMError
+
 
 def _cmd_ingest(args: argparse.Namespace) -> int:
     from lex6.services import build_ingestion_pipeline
@@ -130,7 +132,11 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s"
     )
-    return args.func(args)
+    try:
+        return args.func(args)
+    except LLMError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

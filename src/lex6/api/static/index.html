@@ -202,7 +202,9 @@ async function fetchBackendStatus(){
   try{
     const res = await fetch('/api/health');
     const j = await res.json();
-    document.getElementById('backend-status').innerText = j.status || 'turbo';
+    const el = document.getElementById('backend-status');
+    el.innerText = j.status || 'turbo';
+    if(j.llm && !j.llm.ok){ el.innerText += ' (LLM unavailable)'; el.title = j.llm.error || ''; el.style.color = '#b45309'; }
   }catch(e){document.getElementById('backend-status').innerText = 'down'}
 }
 
@@ -318,7 +320,17 @@ document.getElementById('btn-ask').addEventListener('click', async ()=>{
   const maxTokens = parseInt(lengthSel.value || '4096',10);
   const payload={query:q, document_id: docFilter||null, max_tokens: maxTokens, preview_length: null};
   const res=await fetch('/api/assessments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!res.ok){status.innerText='Failed';return}
+  if(!res.ok){
+    let msg = 'Failed';
+    try{ const err = await res.json(); if(err && err.detail) msg += ': ' + (typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail)); }catch(e){}
+    status.innerText = msg;
+    const errMsg = document.createElement('div');
+    errMsg.className = 'chat-message chat-bot';
+    errMsg.textContent = msg;
+    chat.appendChild(errMsg);
+    chat.scrollTop = chat.scrollHeight;
+    return;
+  }
   const r=await res.json();
   status.innerText='Done';
 

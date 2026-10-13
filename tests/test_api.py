@@ -24,6 +24,13 @@ def agent_llm(prompt, system):
     return "I am Lex6."
 
 
+@pytest.fixture(autouse=True)
+def installed_model(monkeypatch):
+    problems = {"value": None}
+    monkeypatch.setattr("lex6.api.app.check_model", lambda model, host: problems["value"])
+    return problems
+
+
 @pytest.fixture
 def client(settings, fake_embedder):
     vs = VectorStore(
@@ -106,3 +113,24 @@ def test_document_filter_retriever():
     base = Base()
     out = DocumentFilterRetriever(base, "a").retrieve("q", top_k=2)
     assert base.top_k == 8 and [d["id"] for d in out] == [1, 3]
+
+
+def test_ollama_failure_returns_503_with_fix_and_health_reports_it(client, installed_model):
+    from lex6.llm import LLMError
+
+    def missing(prompt, system):
+        raise LLMError("Ollama model 'deepseek-r1:8b' is not installed. Run `ollama pull deepseek-r1:8b`")
+
+    client.llm.fn = missing
+    r = client.post("/api/assessments", json={"query": "What about leakage?"})
+    assert r.status_code == 503
+    assert "ollama pull deepseek-r1:8b" in r.json()["detail"]
+    assert client.get("/api/health").json()["llm"]["ok"] is True
+
+    installed_model["value"] = "Ollama model 'deepseek-r1:8b' is not installed"
+    health = client.get("/api/health").json()
+    assert health["status"] == "ok" and health["llm"] == {
+        "model": client.get("/api/health").json()["llm_model"],
+        "ok": False,
+        "error": "Ollama model 'deepseek-r1:8b' is not installed",
+    }
