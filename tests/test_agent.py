@@ -267,3 +267,20 @@ def test_real_model_leakage_answer_is_recited_to_the_docx():
     assert "caused by that activity [2]." in resp.answer
     assert {c["chunk_id"] for c in resp.citations} == {"c1", "c2"}
     assert resp.citation_mode == "inferred"
+
+
+def test_drop_uncited_abstention_that_contradicts_cited_answer():
+    from lex6.agent import drop_contradictory_abstention
+
+    q = "What is the registry fee for ITMO transfers?"
+    answer = (
+        "The registry fee for ITMO transfers is 37 euros per tonne [1]. However, the provided context does not "
+        "contain information about the specific registry fee for ITMO transfers. It applies per tonne [1]."
+    )
+    assert drop_contradictory_abstention(answer, q) == (
+        "The registry fee for ITMO transfers is 37 euros per tonne [1]. It applies per tonne [1]."
+    )
+    partial = "The fee is 37 euros [1]. The context does not specify when the fee is due."
+    assert drop_contradictory_abstention(partial, q) == partial
+    uncited = "The provided context does not contain information about the registry fee for ITMO transfers."
+    assert drop_contradictory_abstention(uncited, q) == uncited
