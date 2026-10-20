@@ -29,5 +29,10 @@ ollama pull deepseek-r1:8b     # default LEX6_LLM_MODEL (notebook model)
 only the first start pays for translation/embedding. Files uploaded in the UI are added to the same store and searched
 together with the corpus. Set `LEX6_AUTO_INGEST_CORPUS=false` to disable.
 
+Queries that name a country (e.g. "How does the NDC of Australia mention climate law?") put every chunk that mentions
+it, or that comes from a file named after it, at the top with score 1.0 (each matching document is represented); the
+normal hybrid ranking follows. Detection uses pycountry names plus aliases (USA, UK, Russia, ...). Disable with
+`LEX6_COUNTRY_PRIORITY=false`; the eval's naive baseline never uses it.
+
 If the model isn't installed or Ollama isn't running, `/api/health` reports `LLM unavailable` (shown in the UI
 sidebar) and Ask/CLI calls return a message saying which `ollama pull` / `ollama serve` command fixes it.

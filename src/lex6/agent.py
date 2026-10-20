@@ -347,12 +347,13 @@ class RetrievalAgent:
         for q in queries:
             for doc in self.retriever.retrieve(q, top_k=self.top_k, score_threshold=self.score_threshold):
                 current = pool.get(doc["id"])
-                if current is None or (doc.get("score") or 0) > (current.get("score") or 0):
+                if current is None or _rank_key(doc) > _rank_key(current):
                     pool[doc["id"]] = {**doc, "query": q}
 
     def _context(self, pool: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-        ranked = sorted(pool.values(), key=lambda d: d.get("score") or 0.0, reverse=True)
-        return ranked[: self.max_context_chunks]
+        ranked = sorted(pool.values(), key=_rank_key, reverse=True)
+        country = sum(1 for d in ranked if d.get("country_match"))
+        return ranked[: max(self.max_context_chunks, country)]
 
     # --- main entry point --------------------------------------------------------------
     def run(self, question: str) -> AgentResponse:
@@ -415,6 +416,11 @@ class RetrievalAgent:
             citation_mode=mode,
             steps=steps,
         )
+
+
+def _rank_key(doc: dict[str, Any]) -> tuple[bool, float]:
+    """Country-matched chunks rank above everything else (cross-encoder logits can exceed their 1.0 score)."""
+    return bool(doc.get("country_match")), doc.get("score") or 0.0
 
 
 def _dedupe(items: list[str]) -> list[str]:

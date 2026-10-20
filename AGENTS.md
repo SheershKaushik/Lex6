@@ -12,7 +12,9 @@ src/lex6/
   embeddings.py        # EmbeddingManager (sentence-transformers, BAAI/bge-m3)
   vectorstore.py       # FaissDocStore + VectorStore (FAISS IndexFlatL2 on L2-normalised vectors)
   llm.py               # Ollama chat/generate wrappers (local + optional Ollama Cloud for HyDE)
+  countries.py         # Country-name detection (pycountry + aliases) for the country-priority rule
   retrieval/           # RAGRetriever (naive dense), BM25, CrossEncoder, AdvancedRAGRetriever (HyDE+hybrid+rerank)
+  retrieval/country.py # CountryPriorityRetriever: chunks mentioning a country named in the query first (score 1.0)
   rag.py               # rag_simple / rag_advanced / AdvancedRAGPipeline (notebook pipelines)
   agent.py             # RetrievalAgent: route -> plan queries -> retrieve/reflect -> cited answer
   eval/                # Eval harness: agent vs naive single-shot baseline
