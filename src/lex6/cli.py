@@ -68,7 +68,9 @@ def _cmd_eval(args: argparse.Namespace) -> int:
         questions = [q for q in questions if q.id in set(args.only.split(","))]
     vs = build_vector_store()
     systems = {
-        "baseline": NaiveBaseline(build_retriever("naive", vector_store=vs), build_llm(), top_k=args.top_k),
+        "baseline": NaiveBaseline(
+            build_retriever("naive", vector_store=vs, country_priority=False), build_llm(), top_k=args.top_k
+        ),
         "agent": AgentSystem(build_agent(vector_store=vs)),
     }
 

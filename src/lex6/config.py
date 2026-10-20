@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-m3"
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
+    # Queries naming a country put chunks mentioning it first (score 1.0); the eval's naive baseline stays plain.
+    country_priority: bool = True
+
     # Chunking.
     chunk_size: int = 1000
     chunk_overlap: int = 200

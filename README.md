@@ -24,5 +24,10 @@ ollama pull deepseek-r1:8b     # default LEX6_LLM_MODEL (notebook model)
 # or use a smaller installed model: export LEX6_LLM_MODEL=qwen2.5:3b
 ```
 
+Queries that name a country (e.g. "How does the NDC of Australia mention climate law?") put every chunk that mentions
+it, or that comes from a file named after it, at the top with score 1.0 (each matching document is represented); the
+normal hybrid ranking follows. Detection uses pycountry names plus aliases (USA, UK, Russia, ...). Disable with
+`LEX6_COUNTRY_PRIORITY=false`; the eval's naive baseline never uses it.
+
 If the model isn't installed or Ollama isn't running, `/api/health` reports `LLM unavailable` (shown in the UI
 sidebar) and Ask/CLI calls return a message saying which `ollama pull` / `ollama serve` command fixes it.
