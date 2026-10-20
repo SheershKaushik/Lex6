@@ -13,6 +13,7 @@ from lex6.ingestion.chunking import split_documents
 from lex6.ingestion.language import LanguageNormalizer, TranslationError, Translator
 from lex6.ingestion.loaders import discover_files, extract_country_from_filename, load_file
 from lex6.ingestion.validation import FileValidator, validate_content
+from lex6.llm import LLMError
 from lex6.vectorstore import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -54,13 +55,15 @@ class IngestionPipeline:
             files.extend(discover_files(p) if p.is_dir() else [p])
         return files
 
-    def ingest(self, paths: list[str | Path], display_names: dict[Path, str] | None = None) -> list[FileReport]:
+    def ingest(
+        self, paths: list[str | Path], display_names: dict[Path, str] | None = None, source: str = "upload"
+    ) -> list[FileReport]:
         validator = FileValidator(self.settings.max_file_size_mb, known_hashes=self.vector_store.known_hashes())
         reports = []
         changed = False
         for path in self.expand(paths):
             name = (display_names or {}).get(path, path.name)
-            report = self._ingest_one(path, name, validator)
+            report = self._ingest_one(path, name, validator, source)
             reports.append(report)
             changed |= report.status == "ingested"
             logger.info("%s: %s %s", name, report.status, "; ".join(report.errors))
@@ -68,7 +71,7 @@ class IngestionPipeline:
             self.vector_store.save_local()
         return reports
 
-    def _ingest_one(self, path: Path, name: str, validator: FileValidator) -> FileReport:
+    def _ingest_one(self, path: Path, name: str, validator: FileValidator, source: str = "upload") -> FileReport:
         v = validator.validate(path)
         report = FileReport(filename=name, status="rejected", file_type=v.file_type, warnings=list(v.warnings))
         if not v.ok:
@@ -89,7 +92,7 @@ class IngestionPipeline:
 
         try:
             pages, lang_summary = self.normalizer.normalize(pages)
-        except TranslationError as e:
+        except (TranslationError, LLMError) as e:
             report.status = "failed"
             report.errors.append(str(e))
             return report
@@ -128,6 +131,7 @@ class IngestionPipeline:
             "chunks": len(chunks),
             "country": country,
             "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "source": source,
         }
         page_records = [
             {

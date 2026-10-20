@@ -24,6 +24,11 @@ ollama pull deepseek-r1:8b     # default LEX6_LLM_MODEL (notebook model)
 # or use a smaller installed model: export LEX6_LLM_MODEL=qwen2.5:3b
 ```
 
+`lex6 serve` indexes every file in `data/sample/` (`LEX6_CORPUS_DIR`) into the FAISS store under
+`data/vector_store/` on startup, in the background. Files that are already indexed are skipped (by content hash), so
+only the first start pays for translation/embedding. Files uploaded in the UI are added to the same store and searched
+together with the corpus. Set `LEX6_AUTO_INGEST_CORPUS=false` to disable.
+
 Queries that name a country (e.g. "How does the NDC of Australia mention climate law?") put every chunk that mentions
 it, or that comes from a file named after it, at the top with score 1.0 (each matching document is represented); the
 normal hybrid ranking follows. Detection uses pycountry names plus aliases (USA, UK, Russia, ...). Disable with

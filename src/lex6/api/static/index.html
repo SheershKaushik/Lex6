@@ -75,7 +75,7 @@
           <div>
             <div class="card upload-area">
               <h3 style="margin-top:0">Upload documents</h3>
-              <p class="small">Drop PDFs or click to upload treaties, NDCs, COP decisions (you can upload many files at once).</p>
+              <p class="small">Documents in the data folder are already indexed. Add your own PDF, DOCX, TXT or MD files (many at once) and they are searched together with them.</p>
               <div style="margin-top:12px">
                 <label class="btn" for="file-input">Select files</label>
                 <input id="file-input" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" multiple />
@@ -85,7 +85,8 @@
             </div>
 
             <div class="card">
-              <h4 style="margin:0 0 8px 0">Uploaded documents</h4>
+              <h4 style="margin:0 0 8px 0">Documents</h4>
+              <div id="corpus-status" class="small" style="margin-bottom:8px"></div>
               <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
                 <input id="doc-search" placeholder="Search documents by name..." style="flex:1;padding:8px;border-radius:8px;border:1px solid #e6e9ee" />
                 <button class="btn secondary" id="btn-clear-search">Clear</button>
@@ -197,6 +198,7 @@ const api = {
 
 let selectedDocId = null;
 let documentsCache = [];
+let corpusStatus = null;
 
 async function fetchBackendStatus(){
   try{
@@ -205,7 +207,23 @@ async function fetchBackendStatus(){
     const el = document.getElementById('backend-status');
     el.innerText = j.status || 'turbo';
     if(j.llm && !j.llm.ok){ el.innerText += ' (LLM unavailable)'; el.title = j.llm.error || ''; el.style.color = '#b45309'; }
+    renderCorpusStatus(j.corpus || {});
   }catch(e){document.getElementById('backend-status').innerText = 'down'}
+}
+
+function renderCorpusStatus(c){
+  const el = document.getElementById('corpus-status');
+  const failed = c.failed || [];
+  const done = (c.ingested||0) + (c.already_indexed||0) + failed.length;
+  if(c.status==='syncing' || c.status==='pending') el.innerHTML = `<span class="spinner"></span> Indexing data folder (${done}/${c.files||0})…`;
+  else if(c.status==='ready') el.innerText = `Data folder: ${c.files - failed.length} of ${c.files} file(s) indexed` + (c.ingested ? ` (${c.ingested} new)` : '') + (failed.length ? ' • failed: ' + failed.map(f=>`${f.filename} (${f.errors.join('; ')})`).join(', ') : '');
+  else if(c.status==='missing') el.innerText = `Data folder ${c.dir} not found`;
+  else if(c.status==='error') el.innerText = 'Data folder indexing failed: ' + (c.error||'');
+  else el.innerText = '';
+  const busy = c.status==='syncing' || c.status==='pending';
+  if(busy || (corpusStatus!==null && corpusStatus!==c.status)) listDocuments();
+  corpusStatus = c.status;
+  if(busy) setTimeout(fetchBackendStatus, 5000);
 }
 
 async function listDocuments(){
@@ -228,7 +246,7 @@ function renderDocuments(filter){
 
   shown.forEach(d=>{
     const div = document.createElement('div'); div.className='doc-item';
-    div.innerHTML = `<div><strong>${d.title||d.filename}</strong><div class='meta'>${d.doc_type||''} • ${new Date(d.uploaded_at).toLocaleDateString()}</div></div><div><button class='btn' onclick="selectDoc('${d.id}')">Open</button></div>`;
+    div.innerHTML = `<div><strong>${d.title||d.filename}</strong><div class='meta'>${d.doc_type||''} • ${d.source==='corpus' ? 'data folder' : (d.session_upload ? 'uploaded this session' : 'uploaded')} • ${new Date(d.uploaded_at).toLocaleDateString()}</div></div><div><button class='btn' onclick="selectDoc('${d.id}')">Open</button></div>`;
     container.appendChild(div);
     const opt = document.createElement('option'); opt.value=d.id; opt.textContent=d.title||d.filename; qaFilter.appendChild(opt);
     const opt2 = document.createElement('option'); opt2.value=d.id; opt2.textContent=d.title||d.filename; compareDocs.appendChild(opt2);

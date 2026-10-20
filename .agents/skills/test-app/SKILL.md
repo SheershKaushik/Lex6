@@ -121,3 +121,18 @@ For translated PDFs, page previews prove the text is English, not that the trans
 chunks for repeated or invented sentences (small local models can loop) and report that separately.
 
 Compare, Reports and Knowledge Graph are deferred and are expected to do nothing or return 404.
+
+### Data-folder corpus (auto-ingested on startup)
+
+`lex6 serve` indexes `LEX6_CORPUS_DIR` (default `data/sample`) into `LEX6_DATA_DIR` in a background thread;
+`/api/health` → `corpus.status` (`pending|syncing|ready|missing|error|disabled`). So a fresh data dir is not empty
+after startup: for tests that need an empty Upload list (e.g. missing-model checks) set `LEX6_AUTO_INGEST_CORPUS=false`.
+- Use `lex6 -v serve` to see per-file ingestion and the `corpus ...: N files, X newly ingested, Y already indexed` line.
+- Persistence check: first start on a fresh dir → `4 newly ingested`; restart on the same dir → `0 newly ingested,
+  4 already indexed` within seconds and no translation calls / no FAISS writes (compare hashes/mtimes of
+  `vector_store/`).
+- Progress states (`n/4`) can last only seconds between the UI's 5 s polls; have the browser and recording ready
+  before starting a fresh sync.
+- Combined search: upload a TXT with a distinctive fictional fact → listed as `uploaded this session` next to the
+  `data folder` docs; ask with All documents → the fact is cited to the upload, and the answer must not also claim
+  the context lacks that information.

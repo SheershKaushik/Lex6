@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Storage.
     data_dir: Path = Path("data")
     collection_name: str = "pdf_documents"
+    # Repo corpus, indexed into the persisted vector store when the server starts; already-indexed files are skipped.
+    corpus_dir: Path = Path("data/sample")
+    auto_ingest_corpus: bool = True
 
     @property
     def vector_store_dir(self) -> Path:

@@ -230,11 +230,34 @@ def verify_citations(
     return ("".join(parts) if fixes else answer), fixes
 
 
-def drop_contradictory_abstention(answer: str) -> str:
-    """Remove the 'insufficient information' boilerplate when the model answered (with citations) anyway."""
-    if INSUFFICIENT_CONTEXT not in answer or not _CITATION_RE.search(answer):
+_ABSTAIN_RE = re.compile(
+    r"\b(context|documents?|sources?|excerpts?)\b[^.!?\n]*\b(does not|doesn't|do not|don't)\s+"
+    r"(contain|provide|include|mention|specify|state)",
+    re.IGNORECASE,
+)
+
+
+def drop_contradictory_abstention(answer: str, question: str = "") -> str:
+    """Remove 'insufficient information' claims when the model answered the question (with citations) anyway.
+
+    Drops the canned ``INSUFFICIENT_CONTEXT`` line, and uncited sentences such as "the context does not contain
+    information about <the question>" whose wording covers most of the question's content words.
+    """
+    if not _CITATION_RE.search(answer):
         return answer
     stripped = answer.replace(INSUFFICIENT_CONTEXT, "").strip()
+    q_words = _content_words(question)
+    if q_words:
+        parts = re.split(r"((?<=[.!?])[ \t]+|\n+)", stripped)
+        for k in range(0, len(parts), 2):
+            sentence = parts[k]
+            if _CITATION_RE.search(sentence) or not _ABSTAIN_RE.search(sentence):
+                continue
+            if len(q_words & _content_words(sentence)) / len(q_words) >= 0.6:
+                parts[k] = ""
+                if k + 1 < len(parts) and not parts[k + 1].strip():
+                    parts[k + 1] = ""
+        stripped = re.sub(r"[ \t]{2,}", " ", "".join(parts)).strip()
     return stripped or answer
 
 
@@ -379,7 +402,7 @@ class RetrievalAgent:
             mode = mode if cited else "inferred"
         cited = extract_citations(answer)
         if cited:
-            answer = drop_contradictory_abstention(answer)
+            answer = drop_contradictory_abstention(answer, question)
         sources = build_sources(context)
         steps.append(AgentStep("answer", {"chunks": len(context), "cited": cited, "citation_mode": mode}))
         return AgentResponse(
