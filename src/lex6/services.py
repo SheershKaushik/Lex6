@@ -10,7 +10,7 @@ from lex6.embeddings import EmbeddingManager
 from lex6.ingestion.language import LLMTranslator
 from lex6.ingestion.pipeline import IngestionPipeline
 from lex6.llm import LLMClientWrapper, OllamaLLM
-from lex6.retrieval import AdvancedRAGRetriever, CrossEncoderWrapper, RAGRetriever
+from lex6.retrieval import AdvancedRAGRetriever, CountryPriorityRetriever, CrossEncoderWrapper, RAGRetriever
 from lex6.vectorstore import VectorStore
 
 
@@ -54,16 +54,28 @@ def build_hyde_client(settings: Settings | None = None) -> LLMClientWrapper:
     return LLMClientWrapper(settings=settings or get_settings())
 
 
-def build_retriever(kind: str = "advanced", settings: Settings | None = None, vector_store: VectorStore | None = None):
-    """``naive`` = notebook ``RAGRetriever``; ``advanced`` = HyDE + BM25 + cross-encoder."""
+def build_retriever(
+    kind: str = "advanced",
+    settings: Settings | None = None,
+    vector_store: VectorStore | None = None,
+    country_priority: bool | None = None,
+):
+    """``naive`` = notebook ``RAGRetriever``; ``advanced`` = HyDE + BM25 + cross-encoder.
+
+    Wrapped in ``CountryPriorityRetriever`` unless ``country_priority`` (default: settings) is false.
+    """
     s = settings or get_settings()
     vs = vector_store or build_vector_store(s)
     embedder = get_embedder(s.embedding_model)
     if kind == "naive":
-        return RAGRetriever(vs, embedder)
-    if kind == "advanced":
-        return AdvancedRAGRetriever(vs, embedder, build_hyde_client(s), get_cross_encoder(s.reranker_model))
-    raise ValueError(f"Unknown retriever kind: {kind!r}")
+        base = RAGRetriever(vs, embedder)
+    elif kind == "advanced":
+        base = AdvancedRAGRetriever(vs, embedder, build_hyde_client(s), get_cross_encoder(s.reranker_model))
+    else:
+        raise ValueError(f"Unknown retriever kind: {kind!r}")
+    if s.country_priority if country_priority is None else country_priority:
+        return CountryPriorityRetriever(base, vs, embedder)
+    return base
 
 
 def build_agent(settings: Settings | None = None, vector_store: VectorStore | None = None) -> RetrievalAgent:
