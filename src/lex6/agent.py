@@ -280,6 +280,21 @@ def relevant_chunks(question: str, chunks: list[dict[str, Any]]) -> tuple[list[i
     return sorted(set(hits)), words
 
 
+_NEGATION_RE = re.compile(r"\b(not|no|nothing|neither|lacks?|doesn't|don't|isn't)\b", re.IGNORECASE)
+
+
+def off_topic_answer(answer: str, question: str, chunks: list[dict[str, Any]]) -> bool:
+    """A cited answer to a question none of whose terms occur in any retrieved chunk, and which itself says the
+    sources don't cover the question: the citations are padding, so the answer is really an abstention."""
+    q_stems = _question_stems(question)
+    if not q_stems or any(q_stems & {_stem(w) for w in _content_words(d["content"])} for d in chunks):
+        return False
+    return any(
+        _NEGATION_RE.search(sentence) and q_stems & {_stem(w) for w in _content_words(sentence)}
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", answer)
+    )
+
+
 def drop_contradictory_abstention(answer: str, question: str = "") -> str:
     """Remove 'insufficient information' claims when the model answered the question (with citations) anyway.
 
@@ -443,6 +458,9 @@ class RetrievalAgent:
                 steps.append(AgentStep("retry_answer", {"relevant_chunks": chunks, "answered": bool(retry[2])}))
                 if retry[2]:
                     answer, mode, cited = retry
+        if cited and off_topic_answer(answer, question, context):
+            steps.append(AgentStep("abstain", {"reason": "no question term in context", "dropped_citations": cited}))
+            answer, mode, cited = INSUFFICIENT_CONTEXT, "none", []
         sources = build_sources(context)
         steps.append(AgentStep("answer", {"chunks": len(context), "cited": cited, "citation_mode": mode}))
         return AgentResponse(

@@ -343,3 +343,26 @@ def test_abstention_kept_when_retry_also_abstains_or_nothing_relevant():
     resp = agent.run("What is the weather on Mars?")
     assert resp.answer == INSUFFICIENT_CONTEXT and len(llm.prompts) == 3
     assert not any(s.action == "retry_answer" for s in resp.steps)
+
+
+def test_off_topic_cited_answer_becomes_abstention():
+    padded = (
+        "[2] The Parties agree on corresponding adjustments.\n"
+        "The agreements do not address the population of Mars colonies."
+    )
+    agent, _ = _reversal_agent([padded])
+    resp = agent.run("What is the population of Mars colonies in 2050?")
+    assert resp.answer == INSUFFICIENT_CONTEXT and not resp.citations
+    assert next(s for s in resp.steps if s.action == "abstain").detail["dropped_citations"] == [2]
+
+
+def test_partial_answer_with_on_topic_context_is_kept():
+    partial = (
+        "The bilateral agreements do not themselves contain reversal rules. Under the removals standard, "
+        "reversed units are cancelled from the buffer pool [3]."
+    )
+    agent, _ = _reversal_agent([partial])
+    resp = agent.run(REVERSAL_Q)
+    assert [c["index"] for c in resp.citations] == [3]
+    assert "buffer pool" in resp.answer
+    assert not any(s.action == "abstain" for s in resp.steps)
