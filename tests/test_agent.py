@@ -284,3 +284,62 @@ def test_drop_uncited_abstention_that_contradicts_cited_answer():
     assert drop_contradictory_abstention(partial, q) == partial
     uncited = "The provided context does not contain information about the registry fee for ITMO transfers."
     assert drop_contradictory_abstention(uncited, q) == uncited
+
+
+REVERSAL_CHUNKS = [
+    {"id": "a", "content": "Bilateral agreement between Zambia and Sweden: authorization and transfer of ITMOs.",
+     "metadata": {"source_file": "zambia_sweden.pdf"}, "score": 1.4},
+    {"id": "b", "content": "The Parties agree on corresponding adjustments for each agreement.",
+     "metadata": {"source_file": "agreement2.pdf"}, "score": 0.5},
+    {"id": "c", "content": "4.6 Addressing reversals. On a reversal, units are cancelled from the buffer pool.",
+     "metadata": {"source_file": "A6.4-STAN-METH-002_REMOVALS.pdf"}, "score": -3.6},
+]  # fmt: skip
+REVERSAL_Q = "How are reversals of carbon storage addressed in bilateral agreements?"
+
+
+class _FixedRetriever:
+    def __init__(self, chunks):
+        self.chunks = chunks
+
+    def retrieve(self, query, top_k=5, score_threshold=0.0):
+        return [dict(d) for d in self.chunks]
+
+
+def _reversal_agent(answers):
+    route_plan = ['{"retrieve": true, "reason": "legal"}', '{"queries": []}']
+    llm = ScriptedLLM(responses=route_plan + answers)
+    return RetrievalAgent(_FixedRetriever(REVERSAL_CHUNKS), llm, max_iterations=1), llm
+
+
+def test_relevant_chunks_uses_distinctive_question_terms():
+    from lex6.agent import is_abstention, relevant_chunks
+
+    assert relevant_chunks(REVERSAL_Q, REVERSAL_CHUNKS) == ([1, 3], ["bilateral", "reversals"])
+    assert relevant_chunks("What is the weather on Mars?", REVERSAL_CHUNKS) == ([], [])
+    assert is_abstention(INSUFFICIENT_CONTEXT)
+    assert is_abstention("The provided documents do not mention reversals.")
+    assert not is_abstention("Reversals are remediated via the buffer pool [3].")
+
+
+def test_abstention_with_relevant_chunks_is_retried():
+    retry = "The bilateral agreements do not cover reversals; the A6.4 standard cancels units from the buffer pool [3]."
+    agent, llm = _reversal_agent([INSUFFICIENT_CONTEXT, retry])
+    resp = agent.run(REVERSAL_Q)
+    assert "buffer pool [3]" in resp.answer and INSUFFICIENT_CONTEXT not in resp.answer
+    assert [c["source"] for c in resp.citations] == ["A6.4-STAN-METH-002_REMOVALS.pdf"]
+    step = next(s for s in resp.steps if s.action == "retry_answer")
+    assert step.detail == {"relevant_chunks": [1, 3], "answered": True}
+    assert "chunk(s) [1], [3] discuss bilateral, reversals" in llm.prompts[-1]["prompt"]
+    assert "Partial answers" in llm.prompts[-1]["prompt"]
+
+
+def test_abstention_kept_when_retry_also_abstains_or_nothing_relevant():
+    agent, _ = _reversal_agent([INSUFFICIENT_CONTEXT, INSUFFICIENT_CONTEXT])
+    resp = agent.run(REVERSAL_Q)
+    assert resp.answer == INSUFFICIENT_CONTEXT and not resp.citations
+    assert next(s for s in resp.steps if s.action == "retry_answer").detail["answered"] is False
+
+    agent, llm = _reversal_agent([INSUFFICIENT_CONTEXT])
+    resp = agent.run("What is the weather on Mars?")
+    assert resp.answer == INSUFFICIENT_CONTEXT and len(llm.prompts) == 3
+    assert not any(s.action == "retry_answer" for s in resp.steps)

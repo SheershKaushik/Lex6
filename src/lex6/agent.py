@@ -76,6 +76,12 @@ CITATION_REMINDER = (
     "use it.\n\n### Answer"
 )
 
+RETRY_NOTE = (
+    "### Note\nA previous attempt claimed the context was insufficient, but chunk(s) {chunks} discuss "
+    "{terms}. Answer the question from what the context says, citing the chunks, and state briefly which part "
+    "of the question the context does not cover instead of refusing.\n\n"
+)
+
 _SMALL_TALK_RE = re.compile(
     r"^\s*(hi|hello|hey|good (morning|afternoon|evening)|thanks?( you)?|thank you|bye|goodbye|"
     r"who are you|what are you|what can you do|how are you)\b[\s\w,!?.']{0,40}$",
@@ -237,6 +243,43 @@ _ABSTAIN_RE = re.compile(
 )
 
 
+_STOPWORDS = {
+    "what", "which", "where", "when", "whom", "whose", "does", "have", "with", "from", "that", "this", "these",
+    "those", "there", "their", "about", "under", "into", "than", "then", "they", "them", "were", "been", "being",
+    "should", "would", "could", "shall", "will", "also", "such", "other", "each", "more", "most", "some", "address",
+    "addressed", "addresses", "handled", "handle", "treated", "explain", "describe", "mention", "mentioned",
+}  # fmt: skip
+
+
+def _stem(word: str) -> str:
+    return re.sub(r"(ations?|als?|ies|es|s|ing|ed)$", "", word)[:6]
+
+
+def _question_stems(text: str) -> set[str]:
+    return {_stem(w) for w in _content_words(text) if w not in _STOPWORDS}
+
+
+def is_abstention(answer: str) -> bool:
+    """An uncited answer that only says the context lacks the information."""
+    if _CITATION_RE.search(answer):
+        return False
+    return INSUFFICIENT_CONTEXT in answer or bool(_ABSTAIN_RE.search(answer)) and len(answer) < 600
+
+
+def relevant_chunks(question: str, chunks: list[dict[str, Any]]) -> tuple[list[int], list[str]]:
+    """1-based numbers of chunks containing a distinctive question term (one found in at most half the chunks,
+    so generic words like "agreement" don't count), and those terms."""
+    stems_per_chunk = [{_stem(w) for w in _content_words(d["content"])} for d in chunks]
+    terms, hits = [], []
+    for stem in sorted(_question_stems(question)):
+        found = [i for i, stems in enumerate(stems_per_chunk, 1) if stem in stems]
+        if found and len(found) <= max(1, len(chunks) // 2):
+            terms.append(stem)
+            hits.extend(found)
+    words = sorted({w for w in _content_words(question) if _stem(w) in terms})
+    return sorted(set(hits)), words
+
+
 def drop_contradictory_abstention(answer: str, question: str = "") -> str:
     """Remove 'insufficient information' claims when the model answered the question (with citations) anyway.
 
@@ -389,6 +432,34 @@ class RetrievalAgent:
         prompt = LEGAL_ASSESSMENT_PROMPT.format(
             context=format_context(context), question=question, insufficient=INSUFFICIENT_CONTEXT
         ).replace("### Answer", CITATION_REMINDER)
+        answer, mode, cited = self._answer(prompt, context, question, steps)
+        if not cited and is_abstention(answer):
+            chunks, terms = relevant_chunks(question, context)
+            if chunks:
+                note = RETRY_NOTE.format(chunks=", ".join(f"[{n}]" for n in chunks), terms=", ".join(terms))
+                retry = self._answer(
+                    prompt.replace(CITATION_REMINDER, note + CITATION_REMINDER), context, question, steps
+                )
+                steps.append(AgentStep("retry_answer", {"relevant_chunks": chunks, "answered": bool(retry[2])}))
+                if retry[2]:
+                    answer, mode, cited = retry
+        sources = build_sources(context)
+        steps.append(AgentStep("answer", {"chunks": len(context), "cited": cited, "citation_mode": mode}))
+        return AgentResponse(
+            question=question,
+            answer=answer.strip(),
+            used_retrieval=True,
+            queries=tried,
+            sources=sources,
+            citations=[sources[n - 1] for n in cited],
+            confidence=confidence(context),
+            citation_mode=mode,
+            steps=steps,
+        )
+
+    def _answer(
+        self, prompt: str, context: list[dict[str, Any]], question: str, steps: list[AgentStep]
+    ) -> tuple[str, str, list[int]]:
         raw_answer = self.llm.generate(prompt, max_tokens=self.answer_max_tokens)
         answer, cited = sanitize_citations(strip_source_echoes(raw_answer), len(context))
         mode = "explicit" if cited else "none"
@@ -403,19 +474,7 @@ class RetrievalAgent:
         cited = extract_citations(answer)
         if cited:
             answer = drop_contradictory_abstention(answer, question)
-        sources = build_sources(context)
-        steps.append(AgentStep("answer", {"chunks": len(context), "cited": cited, "citation_mode": mode}))
-        return AgentResponse(
-            question=question,
-            answer=answer.strip(),
-            used_retrieval=True,
-            queries=tried,
-            sources=sources,
-            citations=[sources[n - 1] for n in cited],
-            confidence=confidence(context),
-            citation_mode=mode,
-            steps=steps,
-        )
+        return answer, mode, cited
 
 
 def _rank_key(doc: dict[str, Any]) -> tuple[bool, float]:
