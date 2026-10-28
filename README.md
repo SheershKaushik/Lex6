@@ -34,5 +34,10 @@ it, or that comes from a file named after it, at the top with score 1.0 (each ma
 normal hybrid ranking follows. Detection uses pycountry names plus aliases (USA, UK, Russia, ...). Disable with
 `LEX6_COUNTRY_PRIORITY=false`; the eval's naive baseline never uses it.
 
+Answers are not length-capped (`LEX6_LLM_NUM_PREDICT=-1`) and the prompt asks for detailed, expert legal analysis.
+The UI's Learner / Familiar / Law Expert selector (default Law Expert) only changes the register, not the length.
+Prompt and answer share Ollama's context window (`LEX6_LLM_NUM_CTX`, default 16384); if the server logs that an answer
+was cut off, raise it as far as your RAM/VRAM allows.
+
 If the model isn't installed or Ollama isn't running, `/api/health` reports `LLM unavailable` (shown in the UI
 sidebar) and Ask/CLI calls return a message saying which `ollama pull` / `ollama serve` command fixes it.

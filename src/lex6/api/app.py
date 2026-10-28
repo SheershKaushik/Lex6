@@ -14,7 +14,7 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -35,7 +35,9 @@ STATIC_DIR = Path(__file__).with_name("static")
 class AssessmentRequest(BaseModel):
     query: str = Field(min_length=1)
     document_id: str | None = None
-    max_tokens: int | None = Field(default=None, ge=64, le=32768)
+    # None (default) = no cap on answer length; the UI never sends one.
+    max_tokens: int | None = Field(default=None, ge=64)
+    audience: Literal["expert", "familiar", "learner"] = "expert"
     preview_length: int | None = None
 
 
@@ -88,8 +90,8 @@ class Lex6Service:
         vs = build_vector_store(s)
         llm = build_llm(s)
 
-        def agent_factory(retriever: Retriever, max_tokens: int | None) -> RetrievalAgent:
-            return RetrievalAgent(retriever, llm, answer_max_tokens=max_tokens)
+        def agent_factory(retriever: Retriever, max_tokens: int | None, audience: str = "expert") -> RetrievalAgent:
+            return RetrievalAgent(retriever, llm, answer_max_tokens=max_tokens, audience=audience)
 
         return cls(vs, build_ingestion_pipeline(s, vs), build_retriever("advanced", s, vs), agent_factory, s)
 
@@ -181,7 +183,7 @@ class Lex6Service:
                 raise KeyError(req.document_id)
             retriever = DocumentFilterRetriever(retriever, req.document_id)
         with self.lock:
-            response = self.agent_factory(retriever, req.max_tokens).run(req.query)
+            response = self.agent_factory(retriever, req.max_tokens, req.audience).run(req.query)
         result = to_assessment(response, req, preview_length=req.preview_length or 300)
         self.assessments.append(
             {"id": result["assessment_id"], "query": req.query, "created_at": result["created_at"], **result}

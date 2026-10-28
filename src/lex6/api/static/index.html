@@ -132,9 +132,9 @@
           <div class="chat-input">
                     <textarea id="qa-input" placeholder="Ask about Article 6, NDC alignment, carbon leakage, MRV or double-counting..."></textarea>
                     <select id="answer-length" style="width:120px;border-radius:8px;padding:8px">
-                      <option value="512">Learner</option>
-                      <option value="1024" selected>Familiar</option>
-                      <option value="8192">Law Expert</option>
+                      <option value="learner">Learner</option>
+                      <option value="familiar">Familiar</option>
+                      <option value="expert" selected>Law Expert</option>
                     </select>
                     <button class="btn" id="btn-ask">Ask</button>
                   </div>
@@ -334,9 +334,9 @@ document.getElementById('btn-ask').addEventListener('click', async ()=>{
   status.innerHTML='<span class="spinner"></span> Thinking...';
 
   const docFilter=document.getElementById('qa-doc-filter').value;
-  const lengthSel = document.getElementById('answer-length');
-  const maxTokens = parseInt(lengthSel.value || '4096',10);
-  const payload={query:q, document_id: docFilter||null, max_tokens: maxTokens, preview_length: null};
+  // Audience only changes the register; answer length is never capped (no token limit is sent).
+  const audience = document.getElementById('answer-length').value || 'expert';
+  const payload={query:q, document_id: docFilter||null, audience: audience, preview_length: null};
   const res=await fetch('/api/assessments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   if(!res.ok){
     let msg = 'Failed';
@@ -383,10 +383,7 @@ document.getElementById('btn-compare').addEventListener('click',async ()=>{
   const topic = document.getElementById('compare-topic').value;
   if(sel.length<2) return alert('Select at least two documents');
 
-  const lengthSel = document.getElementById('answer-length');
-  const maxTokens = parseInt(lengthSel.value || '4096',10);
-
-  const res = await fetch(api.runCompare,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({doc_ids:sel,topic,max_tokens:maxTokens})});
+  const res = await fetch(api.runCompare,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({doc_ids:sel,topic})});
   if(!res.ok) return alert('Failed to compare');
   const j = await res.json(); renderCompare(j);
 });

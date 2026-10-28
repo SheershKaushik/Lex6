@@ -16,9 +16,11 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     llm_model: str = "deepseek-r1:8b"
     llm_temperature: float = 0.1
-    llm_num_predict: int = 8192
-    # Ollama's default context window silently truncates long RAG prompts; raise it explicitly.
-    llm_num_ctx: int = 8192
+    # -1 = no cap on answer length: generation stops when the model finishes (or the context window is full).
+    llm_num_predict: int = -1
+    # Context window shared by the RAG prompt and the answer (and deepseek-r1's <think> reasoning). Ollama's
+    # default silently truncates long prompts; raise it explicitly. Increase further if RAM/VRAM allows.
+    llm_num_ctx: int = 16384
     translation_model: str | None = None
     hyde_model: str = "gpt-oss:120b-cloud"
     ollama_cloud_host: str = "https://ollama.com"

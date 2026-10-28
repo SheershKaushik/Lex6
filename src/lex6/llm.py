@@ -123,6 +123,14 @@ class OllamaLLM:
             response = self._client(max_tokens or self.num_predict).invoke(messages)
         except _ollama_errors() as e:
             raise explain_ollama_error(e, self.model_name, self.base_url) from e
+        if (getattr(response, "response_metadata", None) or {}).get("done_reason") == "length":
+            logger.warning(
+                "%s output was cut off by the token/context limit (num_predict=%s, num_ctx=%s); "
+                "raise LEX6_LLM_NUM_CTX for longer answers",
+                self.model_name,
+                max_tokens or self.num_predict,
+                self.num_ctx,
+            )
         return strip_think(response.content)
 
 
