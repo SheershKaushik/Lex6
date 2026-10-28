@@ -111,7 +111,9 @@ UI test flow, which must be recorded before any PR that touches `src/lex6/api/` 
    to the chunk that actually states the fact - for this question, the bilateral DOCX - not just that the right
    document appears under "Other retrieved context". The answer must not also claim the context is insufficient.
 4. Ask "Hello, who are you?". The answer comes back directly: "no document retrieval was needed".
-5. The "All documents" filter, set to one document, restricts the citations to that document.
+5. Answer length: the selector next to Ask (default **Law Expert**) sets the register only; answers must not stop
+   mid-sentence. The server log must not show `output was cut off by the token/context limit`.
+6. The "All documents" filter, set to one document, restricts the citations to that document.
 
 CPU timings (qwen2.5:3b, no GPU): ingesting the 3 sample files takes ~7 min (French translation dominates), one agent
 answer 2-7 min. Watch the server log for request completion before assuming the browser is stuck, and don't re-click

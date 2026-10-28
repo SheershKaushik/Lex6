@@ -366,3 +366,23 @@ def test_partial_answer_with_on_topic_context_is_kept():
     assert [c["index"] for c in resp.citations] == [3]
     assert "buffer pool" in resp.answer
     assert not any(s.action == "abstain" for s in resp.steps)
+
+
+def test_answer_prompt_asks_for_detailed_expert_analysis_without_cap():
+    import pytest
+
+    from lex6.agent import RetrievalAgent
+
+    agent, llm = _reversal_agent(["Reversed units are cancelled from the buffer pool [3]."])
+    agent.run(REVERSAL_Q)
+    answer = llm.prompts[-1]
+    assert answer["max_tokens"] is None
+    assert "senior climate-law practitioner" in answer["prompt"] and "There is no length" in answer["prompt"]
+    assert "### Audience" not in answer["prompt"]
+
+    small_talk = ScriptedLLM(responses=["Hello! I am Lex6."])
+    RetrievalAgent(_FixedRetriever(REVERSAL_CHUNKS), small_talk).run("Hello, who are you?")
+    assert small_talk.prompts[-1]["max_tokens"] is None
+
+    with pytest.raises(ValueError):
+        RetrievalAgent(_FixedRetriever(REVERSAL_CHUNKS), llm, audience="child")

@@ -76,6 +76,18 @@ CITATION_REMINDER = (
     "use it.\n\n### Answer"
 )
 
+AUDIENCE_NOTES = {
+    "expert": "",
+    "familiar": (
+        "### Audience\nThe reader is an informed non-lawyer: keep the full detail and legal precision, but explain "
+        "each legal term of art when it is first used.\n\n"
+    ),
+    "learner": (
+        "### Audience\nThe reader is a student new to climate law: keep the full analysis, but explain legal "
+        "concepts and terms in plain language as you go.\n\n"
+    ),
+}
+
 RETRY_NOTE = (
     "### Note\nA previous attempt claimed the context was insufficient, but chunk(s) {chunks} discuss "
     "{terms}. Answer the question from what the context says, citing the chunks, and state briefly which part "
@@ -353,7 +365,10 @@ class RetrievalAgent:
         score_threshold: float = -10.0,
         control_max_tokens: int = 512,
         answer_max_tokens: int | None = None,
+        audience: str = "expert",
     ):
+        if audience not in AUDIENCE_NOTES:
+            raise ValueError(f"audience must be one of {sorted(AUDIENCE_NOTES)}")
         self.retriever = retriever
         self.llm = llm
         self.top_k = top_k
@@ -363,6 +378,7 @@ class RetrievalAgent:
         self.score_threshold = score_threshold
         self.control_max_tokens = control_max_tokens
         self.answer_max_tokens = answer_max_tokens
+        self.audience = audience
 
     # --- decisions ---------------------------------------------------------------------
     def route(self, question: str) -> tuple[bool, str]:
@@ -420,7 +436,7 @@ class RetrievalAgent:
         needs_retrieval, reason = self.route(question)
         steps.append(AgentStep("route", {"retrieve": needs_retrieval, "reason": reason}))
         if not needs_retrieval:
-            answer = self.llm.generate(DIRECT_PROMPT.format(question=question), max_tokens=self.control_max_tokens)
+            answer = self.llm.generate(DIRECT_PROMPT.format(question=question), max_tokens=self.answer_max_tokens)
             return AgentResponse(question, answer.strip(), used_retrieval=False, steps=steps)
 
         queries = self.plan_queries(question)
@@ -446,7 +462,7 @@ class RetrievalAgent:
 
         prompt = LEGAL_ASSESSMENT_PROMPT.format(
             context=format_context(context), question=question, insufficient=INSUFFICIENT_CONTEXT
-        ).replace("### Answer", CITATION_REMINDER)
+        ).replace("### Answer", AUDIENCE_NOTES[self.audience] + CITATION_REMINDER)
         answer, mode, cited = self._answer(prompt, context, question, steps)
         if not cited and is_abstention(answer):
             chunks, terms = relevant_chunks(question, context)

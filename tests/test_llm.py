@@ -73,3 +73,28 @@ def test_check_model(monkeypatch):
     assert check_model("qwen2.5:3b", "h") is None
     assert check_model("llama3", "h") is None
     assert "ollama pull deepseek-r1:8b" in check_model("deepseek-r1:8b", "h")
+
+
+def test_answers_are_uncapped_and_cutoffs_logged(caplog):
+    from types import SimpleNamespace
+
+    from lex6.llm import OllamaLLM
+
+    s = Settings(_env_file=None)
+    assert s.llm_num_predict == -1 and s.llm_num_ctx >= 16384
+    llm = OllamaLLM(model_name="m", settings=s)
+    replies = [
+        SimpleNamespace(content="Full answer.", response_metadata={"done_reason": "stop"}),
+        SimpleNamespace(content="Cut off mid", response_metadata={"done_reason": "length"}),
+    ]
+
+    class Fake:
+        def invoke(self, messages):
+            return replies.pop(0)
+
+    llm._clients[-1] = Fake()
+    with caplog.at_level("WARNING", logger="lex6.llm"):
+        assert llm.generate("q") == "Full answer."
+        assert not caplog.records
+        assert llm.generate("q") == "Cut off mid"
+    assert "LEX6_LLM_NUM_CTX" in caplog.text

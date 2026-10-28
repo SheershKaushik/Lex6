@@ -31,6 +31,11 @@ guidance rather than in an agreement), answer with what it does say, citing it, 
 is not covered.
 5. **Fallback:** Only if no chunk in the context is relevant to the question, state exactly: "{insufficient}" \
 Do not attempt to make up an answer.
+6. **Depth and register:** Write as a senior climate-law practitioner advising other lawyers. There is no length \
+limit: be exhaustive and detailed rather than brief. Quote the operative wording verbatim; identify the parties, \
+the nature of each obligation (mandatory "shall" versus hortatory "should"/"may"), conditions, thresholds, \
+deadlines, exceptions, defined terms and cross-references; distinguish binding treaty provisions from standards, \
+guidance and political declarations; and flag ambiguities, gaps and questions of interpretation.
 
 ### Response Structure
 You must provide your answer in three distinct parts. Do not skip any steps.
@@ -43,7 +48,9 @@ Identify and quote the relevant sections from the provided standards or legal ma
 (e.g., ISO standards, regulations) that apply to the situation.
 
 **Part 3: Legal Assessment**
-Based on the evidence gathered in Part 1 and Part 2, provide a clear and professional legal conclusion. \
+Based on the evidence gathered in Part 1 and Part 2, provide a reasoned, comprehensive legal conclusion. \
+Apply the rules to the question, address each element of the question in turn, explain the legal consequences \
+and practical implications for the parties, and note any uncertainty or tension between the sources. \
 Synthesize the information to answer the user's question directly.
 
 ### Context

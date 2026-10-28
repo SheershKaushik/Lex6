@@ -40,9 +40,9 @@ def client(settings, fake_embedder):
     llm = ScriptedLLM(fn=agent_llm)
     factories = []
 
-    def factory(retriever, max_tokens):
-        factories.append((retriever, max_tokens))
-        return RetrievalAgent(retriever, llm, answer_max_tokens=max_tokens, score_threshold=-1.0)
+    def factory(retriever, max_tokens, audience="expert"):
+        factories.append((retriever, max_tokens, audience))
+        return RetrievalAgent(retriever, llm, answer_max_tokens=max_tokens, audience=audience, score_threshold=-1.0)
 
     service = Lex6Service(vs, pipeline, RAGRetriever(vs, fake_embedder), factory, settings)
     c = TestClient(create_app(service))
@@ -91,7 +91,7 @@ def test_ask_runs_agent_with_citations_and_filter(client, sample_dir):
     assert a["short_answer"] == "Leakage is deducted at ten percent [1]."
     assert a["used_retrieval"] and a["citations"][0]["source"] == "glossary.txt"
     assert a["detailed_explanation"][0].startswith("Cited sources:\n[1] glossary.txt")
-    retriever, max_tokens = client.factories[-1]
+    retriever, max_tokens, _ = client.factories[-1]
     assert isinstance(retriever, DocumentFilterRetriever) and max_tokens == 1024
 
     direct = client.post("/api/assessments", json={"query": "Hello there"}).json()
@@ -181,3 +181,19 @@ def test_server_startup_syncs_corpus_in_background(client, settings, sample_dir)
 def test_missing_corpus_dir(client, settings, tmp_path):
     settings.corpus_dir = tmp_path / "nope"
     assert client.service.sync_corpus()["status"] == "missing"
+
+
+def test_ask_answer_length_is_uncapped_by_default(client, sample_dir):
+    upload(client, ("glossary.txt", (sample_dir / "Article6_glossary.txt").read_bytes(), "text/plain"))
+    assert client.post("/api/assessments", json={"query": "What is leakage?"}).status_code == 200
+    assert client.factories[-1][1:] == (None, "expert")
+    answer_prompt = next(p for p in reversed(client.llm.prompts) if "### Context" in p["prompt"])
+    assert answer_prompt["max_tokens"] is None and "There is no length" in answer_prompt["prompt"]
+
+    r = client.post("/api/assessments", json={"query": "What is leakage?", "audience": "learner", "max_tokens": 65536})
+    assert r.status_code == 200 and client.factories[-1][1:] == (65536, "learner")
+    assert "student new to climate law" in client.llm.prompts[-1]["prompt"]
+    assert client.post("/api/assessments", json={"query": "q", "audience": "child"}).status_code == 422
+
+    html = client.get("/").text
+    assert '<option value="expert" selected>Law Expert</option>' in html and "max_tokens" not in html
