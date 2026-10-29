@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,6 +25,9 @@ def agent_llm(prompt, system):
     return "I am Lex6."
 
 
+PASSCODE = "LEX6access404"
+
+
 @pytest.fixture(autouse=True)
 def installed_model(monkeypatch):
     problems = {"value": None}
@@ -46,6 +50,7 @@ def client(settings, fake_embedder):
 
     service = Lex6Service(vs, pipeline, RAGRetriever(vs, fake_embedder), factory, settings)
     c = TestClient(create_app(service))
+    assert c.post("/api/login", json={"passcode": PASSCODE}).status_code == 200
     c.factories, c.llm, c.service = factories, llm, service
     return c
 
@@ -171,6 +176,7 @@ def test_server_startup_syncs_corpus_in_background(client, settings, sample_dir)
 
     settings.corpus_dir = sample_dir
     with TestClient(create_app(client.service)) as c:
+        c.post("/api/login", json={"passcode": PASSCODE})
         deadline = time.time() + 60
         while c.get("/api/health").json()["corpus"]["status"] != "ready" and time.time() < deadline:
             time.sleep(0.1)
@@ -197,3 +203,51 @@ def test_ask_answer_length_is_uncapped_by_default(client, sample_dir):
 
     html = client.get("/").text
     assert '<option value="expert" selected>Law Expert</option>' in html and "max_tokens" not in html
+
+
+def test_passcode_login_gates_ui_and_api(client):
+    anon = TestClient(client.app)
+    r = anon.get("/", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login"
+    assert anon.get("/static/index.html", follow_redirects=False).status_code == 303
+    assert anon.get("/api/documents").status_code == 401
+    assert anon.post("/api/assessments", json={"query": "q"}).status_code == 401
+    login_page = anon.get("/login")
+    assert login_page.status_code == 200 and 'type="password"' in login_page.text
+    assert "LEX6access404" not in login_page.text
+    assert anon.get("/static/du.png").status_code == 200
+
+    assert anon.post("/api/login", json={"passcode": "wrong"}).status_code == 401
+    assert "lex6_access" not in anon.cookies
+    assert anon.post("/api/login", json={"passcode": "lex6access404"}).status_code == 401
+    assert anon.get("/api/documents").status_code == 401
+
+    assert anon.post("/api/login", json={"passcode": PASSCODE}).status_code == 200
+    assert anon.get("/").status_code == 200 and "Compliance Workspace" in anon.get("/").text
+    assert anon.get("/api/documents").status_code == 200
+    assert anon.get("/login", follow_redirects=False).status_code == 303
+
+    assert anon.post("/api/logout").status_code == 200
+    assert anon.get("/api/documents").status_code == 401
+
+    forged = TestClient(client.app, cookies={"lex6_access": "forged"})
+    assert forged.get("/api/documents").status_code == 401
+
+
+def test_passcode_is_configurable_and_can_be_disabled(client, settings):
+    import hashlib
+
+    import lex6.config
+    from lex6.api.app import passcode_matches
+
+    assert PASSCODE not in Path(lex6.config.__file__).read_text()
+    assert passcode_matches(PASSCODE, settings.access_passcode_sha256)
+
+    settings.access_passcode_sha256 = hashlib.sha256(b"other").hexdigest()
+    c = TestClient(create_app(client.service))
+    assert c.post("/api/login", json={"passcode": PASSCODE}).status_code == 401
+    assert c.post("/api/login", json={"passcode": "other"}).status_code == 200
+    assert c.get("/api/documents").status_code == 200
+
+    settings.access_passcode_sha256 = ""
+    assert TestClient(create_app(client.service)).get("/api/documents").status_code == 200

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>JustN0W ASPA-6 · Login</title>
+  <style>
+    :root{--bg:#f6f8fa;--accent:#68246d;--muted:#6b7280;--danger:#dc2626}
+    html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
+    body{background:var(--bg);color:#111827;display:flex;align-items:center;justify-content:center}
+    .card{background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(16,24,40,0.08);width:360px;overflow:hidden}
+    .head{background:var(--accent);color:#fff;padding:22px 24px}
+    .head img{max-width:220px;height:auto;display:block;margin-bottom:10px}
+    .head .logo{font-weight:700;font-size:18px;letter-spacing:0.3px}
+    form{padding:24px}
+    label{display:block;font-size:14px;color:var(--muted);margin-bottom:6px}
+    input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:15px}
+    input:focus{outline:2px solid var(--accent);border-color:transparent}
+    button{margin-top:14px;width:100%;padding:10px 12px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;cursor:pointer}
+    button:disabled{opacity:0.6;cursor:default}
+    #error{color:var(--danger);font-size:14px;min-height:20px;margin-top:10px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <img src="/static/du.png" alt="Durham University Logo" />
+      <div class="logo">JustN0W ASPA-6</div>
+    </div>
+    <form id="login-form">
+      <label for="passcode">Enter the passcode to continue</label>
+      <input id="passcode" name="passcode" type="password" autocomplete="current-password" autofocus required />
+      <button id="login-btn" type="submit">Unlock</button>
+      <div id="error" role="alert"></div>
+    </form>
+  </div>
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('login-btn'), err = document.getElementById('error');
+  const input = document.getElementById('passcode');
+  btn.disabled = true; err.textContent = '';
+  try {
+    const res = await fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({passcode: input.value})});
+    if (res.ok) { location.href = '/'; return; }
+    err.textContent = res.status === 401 ? 'Incorrect passcode.' : `Login failed (${res.status}).`;
+    input.select();
+  } catch (_) { err.textContent = 'Server unreachable.'; }
+  btn.disabled = false;
+});
+</script>
+</body>
+</html>

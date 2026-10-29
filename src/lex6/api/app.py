@@ -7,7 +7,9 @@ deliberately not implemented yet (their buttons get a 404).
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
+import secrets
 import threading
 import uuid
 from collections.abc import Callable
@@ -16,8 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -30,6 +32,17 @@ from lex6.vectorstore import VectorStore
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).with_name("static")
+ACCESS_COOKIE = "lex6_access"
+PUBLIC_PATHS = {"/login", "/api/login", "/static/du.png"}
+
+
+class LoginRequest(BaseModel):
+    passcode: str
+
+
+def passcode_matches(passcode: str, expected_sha256: str) -> bool:
+    digest = hashlib.sha256(passcode.encode()).hexdigest()
+    return hmac.compare_digest(digest, expected_sha256.lower())
 
 
 class AssessmentRequest(BaseModel):
@@ -257,6 +270,42 @@ def create_app(service: Lex6Service | None = None, settings: Settings | None = N
         yield
 
     app = FastAPI(title="Lex6 agentic RAG", lifespan=lifespan)
+
+    cfg = service.settings if service else (settings or get_settings())
+    login_required = bool(cfg.access_passcode_sha256)
+    access_token = hmac.new(
+        (cfg.session_secret or secrets.token_hex(32)).encode(), b"lex6-access", hashlib.sha256
+    ).hexdigest()
+
+    def logged_in(request: Request) -> bool:
+        return not login_required or hmac.compare_digest(request.cookies.get(ACCESS_COOKIE, ""), access_token)
+
+    @app.middleware("http")
+    async def require_login(request: Request, call_next):
+        if request.url.path in PUBLIC_PATHS or logged_in(request):
+            return await call_next(request)
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "login required"}, status_code=401)
+        return RedirectResponse("/login", status_code=303)
+
+    @app.get("/login", include_in_schema=False)
+    def login_page(request: Request) -> Response:
+        if login_required and logged_in(request):
+            return RedirectResponse("/", status_code=303)
+        return FileResponse(STATIC_DIR / "login.html")
+
+    @app.post("/api/login")
+    def login(req: LoginRequest, response: Response) -> dict[str, bool]:
+        if login_required and not passcode_matches(req.passcode, cfg.access_passcode_sha256):
+            logger.warning("rejected login attempt")
+            raise HTTPException(401, "incorrect passcode")
+        response.set_cookie(ACCESS_COOKIE, access_token, httponly=True, samesite="strict")
+        return {"ok": True}
+
+    @app.post("/api/logout")
+    def logout(response: Response) -> dict[str, bool]:
+        response.delete_cookie(ACCESS_COOKIE)
+        return {"ok": True}
 
     if service is not None:
         state["service"] = service
