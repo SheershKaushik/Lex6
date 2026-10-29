@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # Context window shared by the RAG prompt and the answer (and deepseek-r1's <think> reasoning). Ollama's
     # default silently truncates long prompts; raise it explicitly. Increase further if RAM/VRAM allows.
     llm_num_ctx: int = 16384
+    # Extra tokens for capped calls (routing, planning, translation) on reasoning models such as deepseek-r1: their
+    # <think> block counts toward num_predict, and Ollama's think=false does not stop deepseek-r1 reasoning.
+    llm_reasoning_budget: int = 4096
     translation_model: str | None = None
     hyde_model: str = "gpt-oss:120b-cloud"
     ollama_cloud_host: str = "https://ollama.com"

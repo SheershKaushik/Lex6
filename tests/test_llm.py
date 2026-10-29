@@ -31,6 +31,7 @@ def test_ollama_errors_become_actionable_llm_errors(capsys, monkeypatch):
 
     s = Settings(_env_file=None)
     llm = OllamaLLM(model_name="deepseek-r1:8b", settings=s)
+    llm._thinks = False
 
     class Missing:
         def invoke(self, messages):
@@ -98,3 +99,48 @@ def test_answers_are_uncapped_and_cutoffs_logged(caplog):
         assert not caplog.records
         assert llm.generate("q") == "Cut off mid"
     assert "LEX6_LLM_NUM_CTX" in caplog.text
+
+
+def test_capped_calls_leave_room_for_reasoning(monkeypatch, caplog):
+    from types import SimpleNamespace
+
+    import ollama
+
+    from lex6.llm import OllamaLLM
+
+    shows = []
+
+    class FakeClient:
+        def __init__(self, host):
+            pass
+
+        def show(self, model):
+            shows.append(model)
+            caps = ["completion", "thinking"] if model.startswith("deepseek-r1") else ["completion"]
+            return SimpleNamespace(capabilities=caps)
+
+    monkeypatch.setattr(ollama, "Client", FakeClient)
+    s = Settings(_env_file=None)
+    reasoner = OllamaLLM(model_name="deepseek-r1:8b", settings=s)
+    plain = OllamaLLM(model_name="qwen2.5:3b", settings=s)
+    assert reasoner.token_limit(455) == 455 + s.llm_reasoning_budget
+    assert reasoner.token_limit(None) == -1
+    assert plain.token_limit(455) == 455 and plain.token_limit(None) == -1
+    reasoner.token_limit(10)
+    assert shows == ["deepseek-r1:8b", "qwen2.5:3b"]
+
+    class Fake:
+        def invoke(self, messages):
+            return SimpleNamespace(content="<think>long reasoning", response_metadata={"done_reason": "length"})
+
+    reasoner._clients[455 + s.llm_reasoning_budget] = Fake()
+    with caplog.at_level("WARNING", logger="lex6.llm"):
+        assert reasoner.generate("q", max_tokens=455) == ""
+    assert "LEX6_LLM_REASONING_BUDGET" in caplog.text and "NUM_CTX" not in caplog.text
+
+    class Down:
+        def __init__(self, host):
+            raise ConnectionError("down")
+
+    monkeypatch.setattr(ollama, "Client", Down)
+    assert OllamaLLM(model_name="deepseek-r1:8b", settings=s).token_limit(64) == 64
