@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     corpus_dir: Path = Path("data/sample")
     auto_ingest_corpus: bool = True
 
+    # Web UI/API login. Only the SHA-256 of the passcode is stored; set LEX6_ACCESS_PASSCODE_SHA256 to change it
+    # (`python -c "import hashlib; print(hashlib.sha256(b'NEW').hexdigest())"`). Empty string disables the login.
+    access_passcode_sha256: str = "b611420fc0f90fc4d47d9ffe70a4249e5adf024b335af7f59efca34ccc3d8ae5"
+    # Signs the login cookie. Unset = random per server start, so everyone logs in again after a restart.
+    session_secret: str | None = None
+
     @property
     def vector_store_dir(self) -> Path:
         return self.data_dir / "vector_store"

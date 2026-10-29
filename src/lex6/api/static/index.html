@@ -67,7 +67,10 @@
     <main class="main">
       <div class="topbar">
         <h2 style="margin:0">Compliance Workspace</h2>
-        <div class="meta">Backend: <span id="backend-status">unknown</span></div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="meta">Backend: <span id="backend-status">unknown</span></div>
+          <button id="logout-btn" onclick="logout()" style="padding:6px 12px;border-radius:6px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer">Log out</button>
+        </div>
       </div>
 
       <div id="view-upload" class="view">
@@ -185,6 +188,10 @@
   </div>
 
 <script>
+// Every page/API call needs the passcode login; an expired login (e.g. server restart) goes back to /login.
+const _fetch = window.fetch.bind(window);
+window.fetch = async (...args) => { const r = await _fetch(...args); if (r.status === 401) location.href = '/login'; return r; };
+async function logout(){ await _fetch('/api/logout',{method:'POST'}); location.href = '/login'; }
 // --- Basic UI plumbing & expected backend contract ---
 const api = {
   upload: '/api/documents',              // POST multipart/form-data -> {document_ids: [...]}

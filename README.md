@@ -24,6 +24,10 @@ ollama pull deepseek-r1:8b     # default LEX6_LLM_MODEL (notebook model)
 # or use a smaller installed model: export LEX6_LLM_MODEL=qwen2.5:3b
 ```
 
+Opening the UI first asks for the passcode (`LEX6access404`). It is checked on the server, so every page and `/api/*`
+call needs the login cookie; **Log out** clears it. Only the passcode's SHA-256 is stored: change it with
+`LEX6_ACCESS_PASSCODE_SHA256` (empty disables the login) and set `LEX6_SESSION_SECRET` to keep logins across restarts.
+
 `lex6 serve` indexes every file in `data/sample/` (`LEX6_CORPUS_DIR`) into the FAISS store under
 `data/vector_store/` on startup, in the background. Files that are already indexed are skipped (by content hash), so
 only the first start pays for translation/embedding. Files uploaded in the UI are added to the same store and searched

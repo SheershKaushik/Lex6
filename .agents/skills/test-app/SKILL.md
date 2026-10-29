@@ -97,11 +97,14 @@ citation_precision, abstention, routing, overall, latency_s) with a delta column
 ```bash
 # fresh data dir for Upload testing; set the translation model too in case .env overrides it
 export LEX6_LLM_MODEL=qwen2.5:3b LEX6_TRANSLATION_MODEL=qwen2.5:3b LEX6_DATA_DIR=/tmp/lex6ui-$(date +%s)
-lex6 serve --port 8000          # open http://127.0.0.1:8000/
-curl -s localhost:8000/api/health
+lex6 serve --port 8000          # open http://127.0.0.1:8000/ -> passcode page, enter LEX6access404
+curl -s -c /tmp/lex6.cookies -H 'Content-Type: application/json' -d '{"passcode":"LEX6access404"}' localhost:8000/api/login
+curl -s -b /tmp/lex6.cookies localhost:8000/api/health   # without the cookie every /api/* call is 401
 ```
 
 UI test flow, which must be recorded before any PR that touches `src/lex6/api/` or the HTML:
+0. Login: `/` redirects to `/login`; a wrong passcode shows "Incorrect passcode." and stays there; `LEX6access404`
+   opens the workspace. **Log out** (top right) returns to `/login`.
 1. Sidebar shows the Durham logo and `Backend: ok`.
 2. Upload: choose files from `data/sample/` (PDF, DOCX and TXT are all accepted), click **Start ingest**. The status line
    lists each file as `ingested` or `rejected (reason)`, e.g. a duplicate. Documents appear in the list. **Open** shows pages.
