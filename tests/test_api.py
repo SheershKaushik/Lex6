@@ -184,6 +184,29 @@ def test_server_startup_syncs_corpus_in_background(client, settings, sample_dir)
         assert len(c.get("/api/documents").json()) == 4
 
 
+def test_corpus_defaults_to_whole_data_folder_except_store_and_uploads(client, settings, sample_dir):
+    import shutil
+
+    assert settings.corpus_dir == settings.data_dir
+    team = settings.data_dir / "data-team" / "NDCs"
+    team.mkdir(parents=True)
+    shutil.copy(sample_dir / "Article6_glossary.txt", team)
+    (settings.data_dir / "sample").mkdir()
+    shutil.copy(sample_dir / "Sample_bilateral_agreement_Article6.docx", settings.data_dir / "sample")
+    note = b"My own note: corresponding adjustments must be reported in the biennial transparency report."
+    client.post("/api/documents", files=[("files", ("my_note.txt", note, "text/plain"))])
+    assert any(settings.uploads_dir.rglob("my_note.txt"))
+
+    corpus = client.service.sync_corpus()
+    assert corpus["files"] == corpus["ingested"] == 2 and not corpus["failed"]
+    docs = {d["filename"]: d["source"] for d in client.get("/api/documents").json()}
+    assert docs == {
+        "Article6_glossary.txt": "corpus",
+        "Sample_bilateral_agreement_Article6.docx": "corpus",
+        "my_note.txt": "upload",
+    }
+
+
 def test_missing_corpus_dir(client, settings, tmp_path):
     settings.corpus_dir = tmp_path / "nope"
     assert client.service.sync_corpus()["status"] == "missing"

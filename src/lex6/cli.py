@@ -91,7 +91,10 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
     from lex6.api import create_app
+    from lex6.config import PROJECT_ROOT, get_settings
 
+    s = get_settings()
+    print(f"lex6: project {PROJECT_ROOT} | data {s.data_dir} | corpus {s.corpus_dir}", file=sys.stderr)
     uvicorn.run(create_app(), host=args.host, port=args.port)
     return 0
 
