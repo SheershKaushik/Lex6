@@ -115,7 +115,8 @@ class Lex6Service:
         if not root.is_dir():
             self.corpus.update(status="missing")
             return self.corpus
-        files = self.pipeline.expand([root])
+        skip = (self.settings.vector_store_dir.resolve(), self.settings.uploads_dir.resolve())
+        files = [p for p in self.pipeline.expand([root]) if not any(p.resolve().is_relative_to(d) for d in skip)]
         self.corpus_hashes = {hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
         self.corpus.update(status="syncing", files=len(files), ingested=0, already_indexed=0, failed=[])
         for path in files:

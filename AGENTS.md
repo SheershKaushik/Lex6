@@ -21,6 +21,7 @@ src/lex6/
   api/                 # FastAPI backend + static three.html UI
   cli.py               # `lex6` command (ingest, ask, eval, serve)
 tests/                 # pytest unit tests (fakes for LLM/embeddings; no network needed)
+data/                  # Corpus indexed on `lex6 serve` (data team adds files here); vector_store/, uploads/ are generated
 data/sample/           # Small sample corpus used by tests, eval and the UI demo
 docs/                  # Design notes, notebook bug review
 .agents/skills/        # Agent skills (see test-app before every PR)

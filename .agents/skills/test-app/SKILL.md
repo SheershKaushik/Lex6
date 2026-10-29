@@ -129,7 +129,10 @@ Compare, Reports and Knowledge Graph are deferred and are expected to do nothing
 
 ### Data-folder corpus (auto-ingested on startup)
 
-`lex6 serve` indexes `LEX6_CORPUS_DIR` (default `data/sample`) into `LEX6_DATA_DIR` in a background thread;
+`lex6 serve` indexes `LEX6_CORPUS_DIR` (default: all of `LEX6_DATA_DIR`, recursively, minus `vector_store/` and
+`uploads/`) into `LEX6_DATA_DIR` in a background thread. Relative paths and `.env` resolve against the project root
+(`LEX6_HOME`, else the checkout), not the cwd; the serve banner prints the folders in use. With a fresh
+`LEX6_DATA_DIR=/tmp/...` the corpus is that empty dir: set `LEX6_CORPUS_DIR=data/sample` to get the sample corpus.
 `/api/health` → `corpus.status` (`pending|syncing|ready|missing|error|disabled`). So a fresh data dir is not empty
 after startup: for tests that need an empty Upload list (e.g. missing-model checks) set `LEX6_AUTO_INGEST_CORPUS=false`.
 - Use `lex6 -v serve` to see per-file ingestion and the `corpus ...: N files, X newly ingested, Y already indexed` line.

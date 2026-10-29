@@ -28,8 +28,13 @@ Opening the UI first asks for the passcode (`LEX6access404`). It is checked on t
 call needs the login cookie; **Log out** clears it. Only the passcode's SHA-256 is stored: change it with
 `LEX6_ACCESS_PASSCODE_SHA256` (empty disables the login) and set `LEX6_SESSION_SECRET` to keep logins across restarts.
 
-`lex6 serve` indexes every file in `data/sample/` (`LEX6_CORPUS_DIR`) into the FAISS store under
-`data/vector_store/` on startup, in the background. Files that are already indexed are skipped (by content hash), so
+`lex6 serve` indexes every supported file anywhere under `data/` (`LEX6_CORPUS_DIR`, default: the whole data folder,
+recursively; `data/vector_store/` and `data/uploads/` are skipped) into the FAISS store under `data/vector_store/` on
+startup, in the background. Files the data team drops into `data/` (any subfolder) are picked up on the next start.
+Relative paths and `.env` are resolved against the project folder, not the directory you launch `lex6` from, so
+`lex6 serve` from VS Code and `/path/to/Lex6/.venv/bin/lex6 serve` from any terminal use the same data and store; the
+first log line (`lex6: project ... | data ... | corpus ...`) shows the folders in use. Set `LEX6_HOME` to point at a
+different checkout. Files that are already indexed are skipped (by content hash), so
 only the first start pays for translation/embedding. Files uploaded in the UI are added to the same store and searched
 together with the corpus. Set `LEX6_AUTO_INGEST_CORPUS=false` to disable.
 
