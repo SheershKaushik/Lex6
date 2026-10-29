@@ -33,7 +33,8 @@ class EmbeddingManager:
 
         logger.info("Loading embedding model: %s", self.model_name)
         self.model = SentenceTransformer(self.model_name)
-        self._embedding_dim = self.model.get_sentence_embedding_dimension()
+        get_dim = getattr(self.model, "get_embedding_dimension", None) or self.model.get_sentence_embedding_dimension
+        self._embedding_dim = get_dim()
         logger.info("Embedding dimension: %s", self._embedding_dim)
 
     def get_embedding_dim(self) -> int:

@@ -99,7 +99,28 @@ class OllamaLLM:
         self.temperature = s.llm_temperature if temperature is None else temperature
         self.num_predict = num_predict or s.llm_num_predict
         self.num_ctx = s.llm_num_ctx
+        self.reasoning_budget = s.llm_reasoning_budget
+        self._thinks: bool | None = None
         self._clients: dict[int, object] = {}
+
+    def supports_thinking(self) -> bool:
+        """Whether Ollama reports the ``thinking`` capability (deepseek-r1, qwen3, ...) for this model."""
+        if self._thinks is None:
+            from ollama import Client
+
+            try:
+                caps = Client(host=self.base_url).show(self.model_name).capabilities or []
+            except Exception as e:  # server down / model missing: generate() reports it properly
+                logger.debug("could not read capabilities of %s: %s", self.model_name, e)
+                return False
+            self._thinks = "thinking" in caps
+        return self._thinks
+
+    def token_limit(self, max_tokens: int | None) -> int:
+        """num_predict for a call: uncapped answers stay uncapped; capped calls get room for reasoning."""
+        if not max_tokens:
+            return self.num_predict
+        return max_tokens + self.reasoning_budget if self.supports_thinking() else max_tokens
 
     def _client(self, num_predict: int):
         if num_predict not in self._clients:
@@ -119,18 +140,27 @@ class OllamaLLM:
         if system:
             messages.append(SystemMessage(content=system))
         messages.append(HumanMessage(content=prompt))
+        limit = self.token_limit(max_tokens)
         try:
-            response = self._client(max_tokens or self.num_predict).invoke(messages)
+            response = self._client(limit).invoke(messages)
         except _ollama_errors() as e:
             raise explain_ollama_error(e, self.model_name, self.base_url) from e
         if (getattr(response, "response_metadata", None) or {}).get("done_reason") == "length":
-            logger.warning(
-                "%s output was cut off by the token/context limit (num_predict=%s, num_ctx=%s); "
-                "raise LEX6_LLM_NUM_CTX for longer answers",
-                self.model_name,
-                max_tokens or self.num_predict,
-                self.num_ctx,
-            )
+            if max_tokens:
+                hint = "raise LEX6_LLM_REASONING_BUDGET" if self.supports_thinking() else "runaway output was capped"
+                logger.warning(
+                    "%s output hit its per-call cap (num_predict=%s for a %s-token task); %s",
+                    self.model_name,
+                    limit,
+                    max_tokens,
+                    hint,
+                )
+            else:
+                logger.warning(
+                    "%s output was cut off by the context window (num_ctx=%s); raise LEX6_LLM_NUM_CTX",
+                    self.model_name,
+                    self.num_ctx,
+                )
         return strip_think(response.content)
 
 
