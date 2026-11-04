@@ -131,7 +131,8 @@ Reports and Knowledge Graph are deferred and are expected to do nothing or retur
 
 The Compare view has two country dropdowns filled from `data/enriched_data.xlsx` (`LEX6_COMPARE_WORKBOOK`) and a
 Compare button enabled only once both are chosen. Compare shows a 91-row table (Country profile, then NDC assessment)
-with one column per country; rows whose values differ are highlighted. The workbook is re-read on every request: to
+with one column per country; rows whose values differ are highlighted. NDC assessment cells show stars out of 4 plus the
+level (no mention 1, minimal 2, partial 3, substantial 4). The workbook is re-read on every request: to
 prove it, edit a cell with openpyxl while the server runs (keep a backup, restore afterwards), press Compare again and
 check the new value appears without a restart. No models are needed for Compare.
 
