@@ -432,7 +432,7 @@ function renderCompare(j){
     const differs = new Set(it.values.map(v=>v===null?'':String(v).toLowerCase())).size > 1;
     rows += `<tr class="${differs?'differs':''}"><td>${compareEsc(it.label)}</td>${it.values.map(v=>`<td>${compareCell(v)}</td>`).join('')}</tr>`;
   });
-  card.innerHTML = `<h4 style="margin-top:0">${j.countries.map(escapeHtml).join(' vs ')}</h4>
+  card.innerHTML = `<h4 style="margin-top:0">${j.countries.map(compareEsc).join(' vs ')}</h4>
     <div class="small">${j.items.length} items from ${compareEsc(j.source)} (last modified ${new Date(j.modified).toLocaleString()}). Highlighted rows differ.</div>
     <table class="compare-table" style="margin-top:10px"><thead><tr><th>Item</th>${j.countries.map(c=>`<th>${compareEsc(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
   out.appendChild(card);
