@@ -40,7 +40,8 @@ together with the corpus. Set `LEX6_AUTO_INGEST_CORPUS=false` to disable.
 
 **Compare** picks two countries and shows them side by side from `data/enriched_data.xlsx` (`LEX6_COMPARE_WORKBOOK`):
 91 items (country profile, then NDC assessment factors; `Query for …` prompt columns and the raw IPCC-engagement
-working columns are skipped). The workbook is re-read on every comparison, so edits show up without a restart.
+working columns are skipped). NDC assessment levels are shown as stars out of 4 (no mention 1, minimal 2, partial 3,
+substantial 4). The workbook is re-read on every comparison, so edits show up without a restart.
 
 Queries that name a country (e.g. "How does the NDC of Australia mention climate law?") put every chunk that mentions
 it, or that comes from a file named after it, at the top with score 1.0 (each matching document is represented); the

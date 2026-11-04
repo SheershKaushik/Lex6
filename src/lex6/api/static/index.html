@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>JustN0W ASPA-6</title>
+  <title>JustN0W Lex6</title>
   <style>
     :root{--bg:#f6f8fa;--panel:#ffffff;--accent:#68246d;--muted:#6b7280;--danger:#dc2626}
     html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
@@ -48,6 +48,8 @@
     .compare-table tr.group td{background:#faf7fb;color:var(--accent);font-weight:700}
     .compare-table tr.differs td:not(:first-child){background:#fffbeb}
     .compare-table .empty{color:var(--muted)}
+    .stars{color:#d97706;font-size:16px;letter-spacing:1px;white-space:nowrap}
+    .stars .off{color:#d1d5db}
     .pill{padding:6px 10px;border-radius:999px;border:1px solid #e6eef0;background:white}
   </style>
 </head>
@@ -408,8 +410,9 @@ async function loadCompareCountries(){
 }
 function compareEsc(v){ return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 async function errorText(res){ try{ return (await res.json()).detail || res.statusText; }catch(e){ return res.statusText; } }
-function compareCell(v){
+function compareCell(v, stars, max){
   if(v===null || v===undefined) return '<span class="empty">—</span>';
+  if(stars) return `<span class="stars" title="${compareEsc(v)}" aria-label="${stars} of ${max} stars">${'★'.repeat(stars)}<span class="off">${'★'.repeat(max-stars)}</span></span> <span class="small">${compareEsc(v)}</span>`;
   return compareEsc(v).replace(/https?:\/\/[^\s,;]+/g, u=>`<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
 }
 compareBtn.addEventListener('click', async ()=>{
@@ -430,10 +433,10 @@ function renderCompare(j){
   j.items.forEach(it=>{
     if(it.group !== group){ group = it.group; rows += `<tr class="group"><td colspan="${j.countries.length+1}">${compareEsc(group)}</td></tr>`; }
     const differs = new Set(it.values.map(v=>v===null?'':String(v).toLowerCase())).size > 1;
-    rows += `<tr class="${differs?'differs':''}"><td>${compareEsc(it.label)}</td>${it.values.map(v=>`<td>${compareCell(v)}</td>`).join('')}</tr>`;
+    rows += `<tr class="${differs?'differs':''}"><td>${compareEsc(it.label)}</td>${it.values.map((v,i)=>`<td>${compareCell(v, (it.stars||[])[i], j.max_stars||4)}</td>`).join('')}</tr>`;
   });
   card.innerHTML = `<h4 style="margin-top:0">${j.countries.map(compareEsc).join(' vs ')}</h4>
-    <div class="small">${j.items.length} items from ${compareEsc(j.source)} (last modified ${new Date(j.modified).toLocaleString()}). Highlighted rows differ.</div>
+    <div class="small">${j.items.length} items from ${compareEsc(j.source)} (last modified ${new Date(j.modified).toLocaleString()}). Highlighted rows differ. NDC assessment: ★ no mention, ★★ minimal, ★★★ partial, ★★★★ substantial.</div>
     <table class="compare-table" style="margin-top:10px"><thead><tr><th>Item</th>${j.countries.map(c=>`<th>${compareEsc(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
   out.appendChild(card);
 }

@@ -3,7 +3,7 @@ from datetime import datetime
 import openpyxl
 import pytest
 
-from lex6.compare import CountryWorkbook, WorkbookError, comparison_columns, format_value
+from lex6.compare import CountryWorkbook, WorkbookError, comparison_columns, format_value, rating_stars
 
 HEADERS = [
     "ISO2",
@@ -119,6 +119,11 @@ def test_workbook_compare_and_fresh_reads(tmp_path):
     assert values["Population 2026"] == ["21,913,874", "45,047,068"]
     assert values["Urban Pop %"] == ["46.20%", "26.20%"]
     assert values["Leakage"] == ["minimal", None]
+    items = {it["label"]: it for it in result["items"]}
+    assert items["Leakage"]["stars"] == [2, None]
+    assert items["Clarity of the Headline Target"]["stars"] == [4, 2]
+    assert "stars" not in items["Population 2026"]
+    assert result["max_stars"] == 4
     assert result["source"] == "enriched_data.xlsx"
     with pytest.raises(KeyError):
         wb.compare(["Zambia", "Atlantis"])
@@ -141,3 +146,19 @@ def test_repo_workbook_loads():
     assert len(wb.countries()) > 150 and "Zambia" in wb.countries()
     assert not any(c.label.startswith("Query") for c in wb.columns)
     assert len(wb.columns) == 91
+
+
+@pytest.mark.parametrize(
+    ("value", "stars"),
+    [
+        ("no mention", 1),
+        ("Minimal", 2),
+        (" partial ", 3),
+        ("SUBSTANTIAL", 4),
+        ("no  mention", 1),
+        (None, None),
+        ("n/a", None),
+    ],
+)
+def test_rating_stars(value, stars):
+    assert rating_stars(value) == stars

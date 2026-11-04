@@ -41,6 +41,10 @@ HEADLINE_FACTORS = [
 ]
 PROFILE_END = "additional_document_urls"  # last country-profile column; assessment factors come after it
 COUNTRY_COLUMN = "Party"
+ASSESSMENT_GROUP = "NDC assessment"
+# Star rating (out of 4) shown for assessment-factor levels.
+RATING_STARS = {"no mention": 1, "minimal": 2, "partial": 3, "substantial": 4}
+MAX_STARS = 4
 
 
 class WorkbookError(RuntimeError):
@@ -70,7 +74,7 @@ def comparison_columns(headers: list[Any]) -> list[Column]:
         label = label_for(str(h))
         if label != COUNTRY_COLUMN and not label.lower().startswith("query") and label not in EXCLUDED_COLUMNS:
             (profile if in_profile else factors).append(
-                Column(i, str(h), label, "Country profile" if in_profile else "NDC assessment")
+                Column(i, str(h), label, "Country profile" if in_profile else ASSESSMENT_GROUP)
             )
         if label == PROFILE_END:
             in_profile = False
@@ -101,6 +105,11 @@ def format_value(value: Any, number_format: str = "General") -> str | None:
             return str(int(value))
         return str(value)
     return str(value).replace("\xa0", " ").strip()
+
+
+def rating_stars(value: str | None) -> int | None:
+    """Stars for an assessment level (no mention 1 ... substantial 4); None for blanks or other text."""
+    return RATING_STARS.get(re.sub(r"\s+", " ", value).strip().lower()) if value else None
 
 
 class CountryWorkbook:
@@ -149,5 +158,14 @@ class CountryWorkbook:
                 row = self.rows[c]
                 cell = row[col.index] if col.index < len(row) else None
                 values.append(format_value(getattr(cell, "value", None), getattr(cell, "number_format", "General")))
-            items.append({"label": col.label, "group": col.group, "values": values})
-        return {"countries": countries, "items": items, "source": self.path.name, "modified": self.modified}
+            item: dict[str, Any] = {"label": col.label, "group": col.group, "values": values}
+            if col.group == ASSESSMENT_GROUP:
+                item["stars"] = [rating_stars(v) for v in values]
+            items.append(item)
+        return {
+            "countries": countries,
+            "items": items,
+            "max_stars": MAX_STARS,
+            "source": self.path.name,
+            "modified": self.modified,
+        }

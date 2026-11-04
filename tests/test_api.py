@@ -61,7 +61,7 @@ def upload(client, *files):
 
 def test_index_static_and_health(client):
     html = client.get("/").text
-    assert "JustN0W ASPA-6" in html and ".docx" in html
+    assert "JustN0W Lex6" in html and ".docx" in html
     assert client.get("/static/du.png").headers["content-type"] == "image/png"
     assert client.get("/api/health").json()["status"] == "ok"
 
@@ -288,7 +288,12 @@ def test_compare_endpoints_read_workbook_on_every_request(client, settings, tmp_
     r = client.post("/api/compare", json={"countries": ["Afghanistan", "Zambia"]})
     assert r.status_code == 200
     legal = next(it for it in r.json()["items"] if it["label"] == "Legal Status")
-    assert legal == {"label": "Legal Status", "group": "NDC assessment", "values": ["partial", "partial"]}
+    assert legal == {
+        "label": "Legal Status",
+        "group": "NDC assessment",
+        "values": ["partial", "partial"],
+        "stars": [3, 3],
+    }
     rows[1][9] = "no mention"
     write_workbook(settings.compare_workbook, rows)
     legal = next(
