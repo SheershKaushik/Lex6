@@ -38,6 +38,10 @@ different checkout. Files that are already indexed are skipped (by content hash)
 only the first start pays for translation/embedding. Files uploaded in the UI are added to the same store and searched
 together with the corpus. Set `LEX6_AUTO_INGEST_CORPUS=false` to disable.
 
+**Compare** picks two countries and shows them side by side from `data/enriched_data.xlsx` (`LEX6_COMPARE_WORKBOOK`):
+91 items (country profile, then NDC assessment factors; `Query for …` prompt columns and the raw IPCC-engagement
+working columns are skipped). The workbook is re-read on every comparison, so edits show up without a restart.
+
 Queries that name a country (e.g. "How does the NDC of Australia mention climate law?") put every chunk that mentions
 it, or that comes from a file named after it, at the top with score 1.0 (each matching document is represented); the
 normal hybrid ranking follows. Detection uses pycountry names plus aliases (USA, UK, Russia, ...). Disable with

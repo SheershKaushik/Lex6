@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     # are skipped); already-indexed files are skipped. Unset = the whole data_dir.
     corpus_dir: Path | None = None
     auto_ingest_corpus: bool = True
+    # Workbook behind the Compare view (one row per country); re-read on every request.
+    compare_workbook: Path = Path("data/enriched_data.xlsx")
 
     # Web UI/API login. Only the SHA-256 of the passcode is stored; set LEX6_ACCESS_PASSCODE_SHA256 to change it
     # (`python -c "import hashlib; print(hashlib.sha256(b'NEW').hexdigest())"`). Empty string disables the login.
@@ -80,6 +82,7 @@ class Settings(BaseSettings):
     def _anchor_paths(self) -> Settings:
         self.data_dir = _anchor(self.data_dir)
         self.corpus_dir = _anchor(self.corpus_dir) if self.corpus_dir else self.data_dir
+        self.compare_workbook = _anchor(self.compare_workbook)
         return self
 
     @property

@@ -274,3 +274,28 @@ def test_passcode_is_configurable_and_can_be_disabled(client, settings):
 
     settings.access_passcode_sha256 = ""
     assert TestClient(create_app(client.service)).get("/api/documents").status_code == 200
+
+
+def test_compare_endpoints_read_workbook_on_every_request(client, settings, tmp_path):
+    from tests.test_compare import ROWS, write_workbook
+
+    settings.compare_workbook = tmp_path / "missing.xlsx"
+    assert client.get("/api/compare/countries").status_code == 503
+    settings.compare_workbook = tmp_path / "enriched_data.xlsx"
+    rows = [list(r) for r in ROWS]
+    write_workbook(settings.compare_workbook, rows)
+    assert client.get("/api/compare/countries").json()["countries"] == ["Afghanistan", "Zambia"]
+    r = client.post("/api/compare", json={"countries": ["Afghanistan", "Zambia"]})
+    assert r.status_code == 200
+    legal = next(it for it in r.json()["items"] if it["label"] == "Legal Status")
+    assert legal == {"label": "Legal Status", "group": "NDC assessment", "values": ["partial", "partial"]}
+    rows[1][9] = "no mention"
+    write_workbook(settings.compare_workbook, rows)
+    legal = next(
+        it
+        for it in client.post("/api/compare", json={"countries": ["Afghanistan", "Zambia"]}).json()["items"]
+        if it["label"] == "Legal Status"
+    )
+    assert legal["values"] == ["no mention", "partial"]
+    assert client.post("/api/compare", json={"countries": ["Afghanistan", "Atlantis"]}).status_code == 404
+    assert client.post("/api/compare", json={"countries": ["Afghanistan"]}).status_code == 422

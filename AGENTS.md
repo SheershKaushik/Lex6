@@ -12,6 +12,7 @@ src/lex6/
   embeddings.py        # EmbeddingManager (sentence-transformers, BAAI/bge-m3)
   vectorstore.py       # FaissDocStore + VectorStore (FAISS IndexFlatL2 on L2-normalised vectors)
   llm.py               # Ollama chat/generate wrappers (local + optional Ollama Cloud for HyDE)
+  compare.py           # Compare view: country workbook (data/enriched_data.xlsx), re-read on every request
   countries.py         # Country-name detection (pycountry + aliases) for the country-priority rule
   retrieval/           # RAGRetriever (naive dense), BM25, CrossEncoder, AdvancedRAGRetriever (HyDE+hybrid+rerank)
   retrieval/country.py # CountryPriorityRetriever: chunks mentioning a country named in the query first (score 1.0)
@@ -32,7 +33,9 @@ models and techniques (PyMuPDF loading, RecursiveCharacterTextSplitter 1000/200,
 FAISS + pickled docstore, HyDE + BM25 hybrid + cross-encoder reranking, deepseek-r1 via Ollama,
 three-part legal answer prompt). Do not swap these out without discussion.
 
-Out of scope for now: the **Compare** and **Knowledge Graph** features of the UI.
+Out of scope for now: the **Knowledge Graph** feature of the UI. **Compare** shows two countries side by side
+from `data/enriched_data.xlsx` (91 items: profile columns plus assessment factors; `Query for …` prompt
+columns and the raw IPCC-engagement working columns are skipped).
 
 ## Conventions
 

@@ -41,7 +41,13 @@
     .footer-note{font-size:13px;color:var(--muted);margin-top:8px}
     .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(0,0,0,0.08);border-left-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
-    .compare-list{display:flex;gap:8px}
+    .compare-table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+    .compare-table th,.compare-table td{border-bottom:1px solid #eef2f2;padding:6px 8px;text-align:left;vertical-align:top;overflow-wrap:anywhere;white-space:pre-wrap}
+    .compare-table th{background:#f3eef4;color:var(--accent);position:sticky;top:0}
+    .compare-table td:first-child{font-weight:600;width:32%}
+    .compare-table tr.group td{background:#faf7fb;color:var(--accent);font-weight:700}
+    .compare-table tr.differs td:not(:first-child){background:#fffbeb}
+    .compare-table .empty{color:var(--muted)}
     .pill{padding:6px 10px;border-radius:999px;border:1px solid #e6eef0;background:white}
   </style>
 </head>
@@ -153,12 +159,13 @@
 
       <div id="view-compare" class="view" style="display:none">
         <div class="card">
-          <h3>Comparative analysis</h3>
-          <p class="small">Select two or more documents and a topic to compare (e.g., carbon_leakage, MRV).</p>
-          <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-            <select id="compare-docs" multiple style="width:60%"></select>
-            <select id="compare-topic"><option value="carbon_leakage">carbon_leakage</option><option value="MRV">MRV</option><option value="double_counting">double_counting</option></select>
-            <button class="btn" id="btn-compare">Compare</button>
+          <h3>Compare countries</h3>
+          <p class="small">Pick two countries and press Compare. Values are read fresh from the country workbook on every comparison.</p>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="compare-country-a" aria-label="First country" style="min-width:220px"><option value="">Select country…</option></select>
+            <select id="compare-country-b" aria-label="Second country" style="min-width:220px"><option value="">Select country…</option></select>
+            <button class="btn" id="btn-compare" disabled>Compare</button>
+            <span class="small" id="compare-status"></span>
           </div>
         </div>
         <div id="compare-results" style="margin-top:12px"></div>
@@ -198,7 +205,8 @@ const api = {
   listDocuments: '/api/documents',       // GET -> [{id,title,doc_type,uploaded_at}]
   getDocumentPages: (id)=>`/api/documents/${id}/pages`, // GET -> [{page_number,text,thumbnail_url}]
   runAssessment: '/api/assessments',    // POST {document_ids, query} -> {assessment_id, answer, detailed_explanation, evidence}
-  runCompare: '/api/compare',           // POST {doc_ids, topic} -> {comparison}
+  compareCountries: '/api/compare/countries', // GET -> {countries, source, modified}
+  runCompare: '/api/compare',           // POST {countries: [a, b]} -> {countries, items: [{label, group, values}], source}
   listAssessments: '/api/assessments',  // GET
   downloadReport: (id,fmt)=>`/api/reports/${id}?format=${fmt}`
 }
@@ -244,9 +252,8 @@ async function listDocuments(){
 // renderDocuments: render documents-list and update select dropdowns
 function renderDocuments(filter){
   const container = document.getElementById('documents-list'); container.innerHTML='';
-  const qaFilter = document.getElementById('qa-doc-filter'); const compareDocs = document.getElementById('compare-docs');
+  const qaFilter = document.getElementById('qa-doc-filter');
   qaFilter.innerHTML='<option value="">All documents</option>';
-  compareDocs.innerHTML='';
 
   const q = (filter||'').toLowerCase();
   const shown = documentsCache.filter(d=>{ const name = (d.title||d.filename||'').toLowerCase(); return !q || name.includes(q); });
@@ -256,7 +263,6 @@ function renderDocuments(filter){
     div.innerHTML = `<div><strong>${d.title||d.filename}</strong><div class='meta'>${d.doc_type||''} • ${d.source==='corpus' ? 'data folder' : (d.session_upload ? 'uploaded this session' : 'uploaded')} • ${new Date(d.uploaded_at).toLocaleDateString()}</div></div><div><button class='btn' onclick="selectDoc('${d.id}')">Open</button></div>`;
     container.appendChild(div);
     const opt = document.createElement('option'); opt.value=d.id; opt.textContent=d.title||d.filename; qaFilter.appendChild(opt);
-    const opt2 = document.createElement('option'); opt2.value=d.id; opt2.textContent=d.title||d.filename; compareDocs.appendChild(opt2);
   })
 }
 
@@ -384,42 +390,54 @@ document.getElementById('btn-export-pdf').addEventListener('click',()=>{
 
 function selectEvidence(docId,page){ selectDoc(docId); setTimeout(()=>showPageClauses(docId,page),10000); }
 
-// --- Compare ---
-document.getElementById('btn-compare').addEventListener('click',async ()=>{
-  const sel = Array.from(document.getElementById('compare-docs').selectedOptions).map(o=>o.value);
-  const topic = document.getElementById('compare-topic').value;
-  if(sel.length<2) return alert('Select at least two documents');
-
-  const res = await fetch(api.runCompare,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({doc_ids:sel,topic})});
-  if(!res.ok) return alert('Failed to compare');
-  const j = await res.json(); renderCompare(j);
-});
-function renderCompare(j){ const out = document.getElementById('compare-results'); out.innerHTML=''; const card = document.createElement('div'); card.className='card'; card.innerHTML = `<h4>Comparison: ${j.topic}</h4><div class='small'>${j.summary||''}</div>`; const table = document.createElement('div'); table.style.marginTop='12px'; (j.items||[]).forEach(it=>{ const row = document.createElement('div'); row.className='evidence-item'; row.innerHTML = `<div><strong>${it.document_title}</strong><div class='meta'>Ambition: ${it.ambition}</div></div><div style='margin-top:6px' class='small'>Key clause: ${escapeHtmlSnippet(it.key_clause_text,250)}</div>`; table.appendChild(row); }); card.appendChild(table); out.appendChild(card); }
-
-// New renderer for structured compare response
-function renderCompare(j){
-  const out = document.getElementById('compare-results'); out.innerHTML='';
-  const card = document.createElement('div'); card.className='card';
-
-  if(j.error){
-    card.innerHTML = `<h4>Comparison (partial)</h4><div class='small'>Error: ${escapeHtmlSnippet(j.error,500)}</div><pre style='white-space:pre-wrap;margin-top:8px'>${escapeHtmlSnippet(j.raw||'',2000)}</pre>`;
-    out.appendChild(card); return;
-  }
-
-  const simHtml = (j.similarities||[]).map(s=>`<li>${escapeHtmlSnippet(s,1000)}</li>`).join('');
-  const diffHtml = (j.differences||[]).map(s=>`<li>${escapeHtmlSnippet(s,1000)}</li>`).join('');
-
-  card.innerHTML = `<h4>Comparison: ${escapeHtmlSnippet(j.topic||'')}</h4><div style='margin-top:6px'><strong>Similarities</strong><ul>${simHtml}</ul></div><div style='margin-top:6px'><strong>Differences</strong><ul>${diffHtml}</ul></div>`;
-
-  (j.documents||[]).forEach(doc=>{
-    const docCard = document.createElement('div'); docCard.className='card';
-    const clausesHtml = (doc.clauses||[]).map(c=>`<div class='evidence-item'><div class='small'><strong>Clause</strong><div>${escapeHtmlSnippet(c.text,500)}</div><div class='meta'>${escapeHtmlSnippet(c.explanation,500)}</div></div></div>`).join('');
-    docCard.innerHTML = `<h4 style='margin-top:0'>${escapeHtmlSnippet(doc.document_title||doc.document_id)}</h4><div style='margin-top:8px'>${clausesHtml}</div>`;
-    out.appendChild(docCard);
+// --- Compare (countries, from the country workbook) ---
+const compareA = document.getElementById('compare-country-a'), compareB = document.getElementById('compare-country-b');
+const compareBtn = document.getElementById('btn-compare'), compareStatus = document.getElementById('compare-status');
+function updateCompareButton(){ compareBtn.disabled = !(compareA.value && compareB.value); }
+compareA.addEventListener('change', updateCompareButton); compareB.addEventListener('change', updateCompareButton);
+async function loadCompareCountries(){
+  const res = await fetch(api.compareCountries);
+  if(!res.ok){ compareStatus.innerText = await errorText(res); return; }
+  const j = await res.json();
+  [compareA, compareB].forEach(sel=>{
+    const keep = sel.value; sel.innerHTML = '<option value="">Select country…</option>';
+    j.countries.forEach(c=>{ const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+    if(j.countries.includes(keep)) sel.value = keep;
   });
-
-  out.insertBefore(card, out.firstChild);
+  updateCompareButton();
 }
+function compareEsc(v){ return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+async function errorText(res){ try{ return (await res.json()).detail || res.statusText; }catch(e){ return res.statusText; } }
+function compareCell(v){
+  if(v===null || v===undefined) return '<span class="empty">—</span>';
+  return compareEsc(v).replace(/https?:\/\/[^\s,;]+/g, u=>`<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+}
+compareBtn.addEventListener('click', async ()=>{
+  const countries = [compareA.value, compareB.value];
+  compareBtn.disabled = true; compareStatus.innerHTML = '<span class="spinner"></span> Reading workbook…';
+  try{
+    const res = await fetch(api.runCompare,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({countries})});
+    if(!res.ok){ compareStatus.innerText = 'Compare failed: ' + await errorText(res); return; }
+    renderCompare(await res.json());
+    compareStatus.innerText = '';
+    loadCompareCountries();
+  } finally { updateCompareButton(); }
+});
+function renderCompare(j){
+  const out = document.getElementById('compare-results'); out.innerHTML = '';
+  const card = document.createElement('div'); card.className = 'card';
+  let rows = '', group = null;
+  j.items.forEach(it=>{
+    if(it.group !== group){ group = it.group; rows += `<tr class="group"><td colspan="${j.countries.length+1}">${compareEsc(group)}</td></tr>`; }
+    const differs = new Set(it.values.map(v=>v===null?'':String(v).toLowerCase())).size > 1;
+    rows += `<tr class="${differs?'differs':''}"><td>${compareEsc(it.label)}</td>${it.values.map(v=>`<td>${compareCell(v)}</td>`).join('')}</tr>`;
+  });
+  card.innerHTML = `<h4 style="margin-top:0">${j.countries.map(escapeHtml).join(' vs ')}</h4>
+    <div class="small">${j.items.length} items from ${compareEsc(j.source)} (last modified ${new Date(j.modified).toLocaleString()}). Highlighted rows differ.</div>
+    <table class="compare-table" style="margin-top:10px"><thead><tr><th>Item</th>${j.countries.map(c=>`<th>${compareEsc(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+  out.appendChild(card);
+}
+document.getElementById('nav-compare').addEventListener('click', loadCompareCountries);
 
 // --- Reports ---
 async function loadAssessments(){ const res = await fetch(api.listAssessments); if(!res.ok) return; const j = await res.json(); const sel = document.getElementById('report-assessments'); sel.innerHTML=''; j.forEach(a=>{ const opt = document.createElement('option'); opt.value=a.id; opt.textContent = `${a.query || a.id} • ${new Date(a.created_at).toLocaleString()}`; sel.appendChild(opt); }); }
@@ -428,7 +446,7 @@ async function loadAssessments(){ const res = await fetch(api.listAssessments); 
 document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>{ document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); const id = b.id.replace('nav-','view-'); document.querySelectorAll('.view').forEach(v=>v.style.display='none'); document.getElementById(id).style.display='block'; }));
 
 // --- Init ---
-(async ()=>{ await fetchBackendStatus(); await listDocuments(); await loadAssessments(); })();
+(async ()=>{ await fetchBackendStatus(); await listDocuments(); await loadAssessments(); await loadCompareCountries(); })();
 
 </script>
 </body>
