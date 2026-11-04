@@ -1,6 +1,6 @@
 """HTTP API for ``three.html``.
 
-Implements the routes the Upload and Ask views call. Compare, Reports export and the Knowledge Graph are
+Implements the routes the Upload, Ask and Compare views call. Reports export and the Knowledge Graph are
 deliberately not implemented yet (their buttons get a 404).
 """
 
@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from lex6.agent import AgentResponse, RetrievalAgent
+from lex6.compare import CountryWorkbook, WorkbookError
 from lex6.config import Settings, get_settings
 from lex6.ingestion.pipeline import IngestionPipeline
 from lex6.llm import LLMError, check_model
@@ -38,6 +39,10 @@ PUBLIC_PATHS = {"/login", "/api/login", "/static/du.png"}
 
 class LoginRequest(BaseModel):
     passcode: str
+
+
+class CompareRequest(BaseModel):
+    countries: list[str] = Field(min_length=2, max_length=2)
 
 
 def passcode_matches(passcode: str, expected_sha256: str) -> bool:
@@ -365,6 +370,25 @@ def create_app(service: Lex6Service | None = None, settings: Settings | None = N
     @app.get("/api/assessments")
     def list_assessments() -> list[dict[str, Any]]:
         return [{"id": a["id"], "query": a["query"], "created_at": a["created_at"]} for a in svc().assessments]
+
+    def workbook() -> CountryWorkbook:
+        try:
+            return CountryWorkbook(cfg.compare_workbook)
+        except WorkbookError as e:
+            logger.warning("compare: %s", e)
+            raise HTTPException(503, str(e)) from e
+
+    @app.get("/api/compare/countries")
+    def compare_countries() -> dict[str, Any]:
+        wb = workbook()
+        return {"countries": wb.countries(), "source": wb.path.name, "modified": wb.modified}
+
+    @app.post("/api/compare")
+    def compare(req: CompareRequest) -> dict[str, Any]:
+        try:
+            return workbook().compare(req.countries)
+        except KeyError as e:
+            raise HTTPException(404, f"unknown country: {e.args[0]}") from e
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:

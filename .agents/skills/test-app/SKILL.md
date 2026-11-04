@@ -125,7 +125,15 @@ answer 2-7 min. Watch the server log for request completion before assuming the 
 For translated PDFs, page previews prove the text is English, not that the translation is faithful: inspect the
 chunks for repeated or invented sentences (small local models can loop) and report that separately.
 
-Compare, Reports and Knowledge Graph are deferred and are expected to do nothing or return 404.
+Reports and Knowledge Graph are deferred and are expected to do nothing or return 404.
+
+### Compare (countries from the workbook)
+
+The Compare view has two country dropdowns filled from `data/enriched_data.xlsx` (`LEX6_COMPARE_WORKBOOK`) and a
+Compare button enabled only once both are chosen. Compare shows a 91-row table (Country profile, then NDC assessment)
+with one column per country; rows whose values differ are highlighted. The workbook is re-read on every request: to
+prove it, edit a cell with openpyxl while the server runs (keep a backup, restore afterwards), press Compare again and
+check the new value appears without a restart. No models are needed for Compare.
 
 ### Data-folder corpus (auto-ingested on startup)
 
